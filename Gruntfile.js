@@ -28,7 +28,8 @@ module.exports = function(grunt) {
                 files: [],
                 options: {
                     urls: [
-                        'http://localhost:<%= connect.server.options.port %>/tests/notifier/stompws.html'
+                        'http://localhost:<%= connect.server.options.port %>/tests/notifier/stompws.html',
+                        'http://localhost:<%= connect.server.options.port %>/tests/notifier/mqttws.html'
                     ],
                     "--web-security": false
                 }

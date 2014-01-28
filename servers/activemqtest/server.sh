@@ -1,7 +1,7 @@
 #!/bin/bash
 
 BASE_DIR=`pwd`/$(dirname $0)
-ACTIVEMQ_VERSION='5.8.0'
+ACTIVEMQ_VERSION='5.9.0'
 DOWNLOAD_URL="http://www.us.apache.org/dist/activemq/apache-activemq/$ACTIVEMQ_VERSION/apache-activemq-$ACTIVEMQ_VERSION-bin.tar.gz"
 ACTIVEMQ_PATH="$BASE_DIR/apache-activemq-$ACTIVEMQ_VERSION"
 export ACTIVEMQ_DATA="$ACTIVEMQ_VERSION/data"

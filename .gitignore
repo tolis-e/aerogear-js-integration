@@ -1,11 +1,10 @@
 node_modules/
 nohup.out
 vert.x-2.0.0-final/
-5.8.0/
-apache-activemq-5.8.0/
+5.*
+apache-activemq-*
 mods/
 netty/
-apache-activemq-5.8.0-bin.tar.gz
 SPS/
 vert.x-2.0.0-final.tar.gz
 
