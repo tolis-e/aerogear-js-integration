@@ -1,4 +1,4 @@
-/*! AeroGear JavaScript Library - v1.4.0-dev - 2014-01-19
+/*! AeroGear JavaScript Library - v1.6.0-dev - 2014-08-16
 * https://github.com/aerogear/aerogear-js
 * JBoss, Home of Professional Open Source
 * Copyright Red Hat, Inc., and individual contributors
@@ -13,8 +13,6 @@
 * See the License for the specific language governing permissions and
 * limitations under the License.
 */
-(function( window, undefined ) {
-
 /**
     The AeroGear namespace provides a way to encapsulate the library's properties and methods away from the global namespace
     @namespace
@@ -50,7 +48,7 @@ AeroGear.Core = function() {
         } else if ( typeof config === "string" ) {
             // config is a string so use default adapter type
             collection[ config ] = AeroGear[ this.lib ].adapters[ this.type ]( config, this.config );
-        } else if ( AeroGear.isArray( config ) ) {
+        } else if ( Array.isArray( config ) ) {
             // config is an array so loop through each item in the array
             for ( i = 0; i < config.length; i++ ) {
                 current = config[ i ];
@@ -62,11 +60,6 @@ AeroGear.Core = function() {
 
                         // Merge the Module( pipeline, datamanger, ... )config with the adapters settings
                         current.settings = AeroGear.extend( current.settings || {}, this.config );
-
-                        // Compatibility fix for deprecation of recordId in Pipeline and DataManager constructors
-                        // Added in 1.3 to remove in 1.4
-                        current.settings.recordId = current.settings.recordId || current.recordId;
-                        // End compat fix
 
                         collection[ current.name ] = AeroGear[ this.lib ].adapters[ current.type || this.type ]( current.name, current.settings );
                     }
@@ -80,11 +73,6 @@ AeroGear.Core = function() {
             // Merge the Module( pipeline, datamanger, ... )config with the adapters settings
             // config is an object so use that signature
             config.settings = AeroGear.extend( config.settings || {}, this.config );
-
-            // Compatibility fix for deprecation of recordId in Pipeline and DataManager constructors
-            // Added in 1.3 to remove in 1.4
-            config.settings.recordId = config.settings.recordId || config.recordId;
-            // End compat fix
 
             collection[ config.name ] = AeroGear[ this.lib ].adapters[ config.type || this.type ]( config.name, config.settings );
         }
@@ -109,7 +97,7 @@ AeroGear.Core = function() {
         if ( typeof config === "string" ) {
             // config is a string so delete that item by name
             delete collection[ config ];
-        } else if ( AeroGear.isArray( config ) ) {
+        } else if ( Array.isArray( config ) ) {
             // config is an array so loop through each item in the array
             for ( i = 0; i < config.length; i++ ) {
                 current = config[ i ];
@@ -136,25 +124,28 @@ AeroGear.Core = function() {
     Utility function to test if an object is an Array
     @private
     @method
+    @deprecated
     @param {Object} obj - This can be any object to test
 */
 AeroGear.isArray = function( obj ) {
-    return ({}).toString.call( obj ) === "[object Array]";
+    return Array.isArray( obj );
 };
 
 /**
-    Utility function to merge 2 Objects together.
+    Utility function to merge many Objects in one target Object which is the first object in arguments list.
     @private
     @method
-    @param {Object} obj1 - An Object to be merged.
-    @param {Object} obj2 - An Object to be merged.  This Objects Value takes precendence.
 */
-AeroGear.extend = function( obj1, obj2 ) {
-    var name;
-    for( name in obj2 ) {
-        obj1[ name ] = obj2[ name ];
+AeroGear.extend = function() {
+    var name, i, source,
+        target = arguments[ 0 ];
+    for( i=1; i<arguments.length; i++ ) {
+        source = arguments[ i ];
+        for( name in source ) {
+            target[ name ] = source[ name ];
+        }
     }
-    return obj1;
+    return target;
 };
 
 /**
@@ -565,6 +556,918 @@ sjcl.ecc.P("ecdsa");sjcl.ecc.ecdsa.secretKey.prototype={sign:function(a,b,c,d){s
 sjcl.ecc.ecdsa.publicKey.prototype={verify:function(a,b,c){sjcl.bitArray.bitLength(a)>this.i&&(a=sjcl.bitArray.clamp(a,this.i));var d=sjcl.bitArray,e=this.f.r,f=this.i,g=sjcl.bn.fromBits(d.bitSlice(b,0,f)),d=sjcl.bn.fromBits(d.bitSlice(b,f,2*f)),h=c?d:d.inverseMod(e),f=sjcl.bn.fromBits(a).mul(h).mod(e),h=g.mul(h).mod(e),f=this.f.G.mult2(f,h,this.A).x;if(g.equals(0)||d.equals(0)||g.greaterEquals(e)||d.greaterEquals(e)||!f.equals(g)){if(c===r)return this.verify(a,b,t);throw new sjcl.exception.corrupt("signature didn't check out");
 }return t}};
 
+(function() {
+var define, requireModule, require, requirejs;
+
+(function() {
+  var registry = {}, seen = {};
+
+  define = function(name, deps, callback) {
+    registry[name] = { deps: deps, callback: callback };
+  };
+
+  requirejs = require = requireModule = function(name) {
+  requirejs._eak_seen = registry;
+
+    if (seen[name]) { return seen[name]; }
+    seen[name] = {};
+
+    if (!registry[name]) {
+      throw new Error("Could not find module " + name);
+    }
+
+    var mod = registry[name],
+        deps = mod.deps,
+        callback = mod.callback,
+        reified = [],
+        exports;
+
+    for (var i=0, l=deps.length; i<l; i++) {
+      if (deps[i] === 'exports') {
+        reified.push(exports = {});
+      } else {
+        reified.push(requireModule(resolve(deps[i])));
+      }
+    }
+
+    var value = callback.apply(this, reified);
+    return seen[name] = exports || value;
+
+    function resolve(child) {
+      if (child.charAt(0) !== '.') { return child; }
+      var parts = child.split("/");
+      var parentBase = name.split("/").slice(0, -1);
+
+      for (var i=0, l=parts.length; i<l; i++) {
+        var part = parts[i];
+
+        if (part === '..') { parentBase.pop(); }
+        else if (part === '.') { continue; }
+        else { parentBase.push(part); }
+      }
+
+      return parentBase.join("/");
+    }
+  };
+})();
+
+define("promise/all", 
+  ["./utils","exports"],
+  function(__dependency1__, __exports__) {
+    "use strict";
+    /* global toString */
+
+    var isArray = __dependency1__.isArray;
+    var isFunction = __dependency1__.isFunction;
+
+    /**
+      Returns a promise that is fulfilled when all the given promises have been
+      fulfilled, or rejected if any of them become rejected. The return promise
+      is fulfilled with an array that gives all the values in the order they were
+      passed in the `promises` array argument.
+
+      Example:
+
+      ```javascript
+      var promise1 = RSVP.resolve(1);
+      var promise2 = RSVP.resolve(2);
+      var promise3 = RSVP.resolve(3);
+      var promises = [ promise1, promise2, promise3 ];
+
+      RSVP.all(promises).then(function(array){
+        // The array here would be [ 1, 2, 3 ];
+      });
+      ```
+
+      If any of the `promises` given to `RSVP.all` are rejected, the first promise
+      that is rejected will be given as an argument to the returned promises's
+      rejection handler. For example:
+
+      Example:
+
+      ```javascript
+      var promise1 = RSVP.resolve(1);
+      var promise2 = RSVP.reject(new Error("2"));
+      var promise3 = RSVP.reject(new Error("3"));
+      var promises = [ promise1, promise2, promise3 ];
+
+      RSVP.all(promises).then(function(array){
+        // Code here never runs because there are rejected promises!
+      }, function(error) {
+        // error.message === "2"
+      });
+      ```
+
+      @method all
+      @for RSVP
+      @param {Array} promises
+      @param {String} label
+      @return {Promise} promise that is fulfilled when all `promises` have been
+      fulfilled, or rejected if any of them become rejected.
+    */
+    function all(promises) {
+      /*jshint validthis:true */
+      var Promise = this;
+
+      if (!isArray(promises)) {
+        throw new TypeError('You must pass an array to all.');
+      }
+
+      return new Promise(function(resolve, reject) {
+        var results = [], remaining = promises.length,
+        promise;
+
+        if (remaining === 0) {
+          resolve([]);
+        }
+
+        function resolver(index) {
+          return function(value) {
+            resolveAll(index, value);
+          };
+        }
+
+        function resolveAll(index, value) {
+          results[index] = value;
+          if (--remaining === 0) {
+            resolve(results);
+          }
+        }
+
+        for (var i = 0; i < promises.length; i++) {
+          promise = promises[i];
+
+          if (promise && isFunction(promise.then)) {
+            promise.then(resolver(i), reject);
+          } else {
+            resolveAll(i, promise);
+          }
+        }
+      });
+    }
+
+    __exports__.all = all;
+  });
+define("promise/asap", 
+  ["exports"],
+  function(__exports__) {
+    "use strict";
+    var browserGlobal = (typeof window !== 'undefined') ? window : {};
+    var BrowserMutationObserver = browserGlobal.MutationObserver || browserGlobal.WebKitMutationObserver;
+    var local = (typeof global !== 'undefined') ? global : this;
+
+    // node
+    function useNextTick() {
+      return function() {
+        process.nextTick(flush);
+      };
+    }
+
+    function useMutationObserver() {
+      var iterations = 0;
+      var observer = new BrowserMutationObserver(flush);
+      var node = document.createTextNode('');
+      observer.observe(node, { characterData: true });
+
+      return function() {
+        node.data = (iterations = ++iterations % 2);
+      };
+    }
+
+    function useSetTimeout() {
+      return function() {
+        local.setTimeout(flush, 1);
+      };
+    }
+
+    var queue = [];
+    function flush() {
+      for (var i = 0; i < queue.length; i++) {
+        var tuple = queue[i];
+        var callback = tuple[0], arg = tuple[1];
+        callback(arg);
+      }
+      queue = [];
+    }
+
+    var scheduleFlush;
+
+    // Decide what async method to use to triggering processing of queued callbacks:
+    if (typeof process !== 'undefined' && {}.toString.call(process) === '[object process]') {
+      scheduleFlush = useNextTick();
+    } else if (BrowserMutationObserver) {
+      scheduleFlush = useMutationObserver();
+    } else {
+      scheduleFlush = useSetTimeout();
+    }
+
+    function asap(callback, arg) {
+      var length = queue.push([callback, arg]);
+      if (length === 1) {
+        // If length is 1, that means that we need to schedule an async flush.
+        // If additional callbacks are queued before the queue is flushed, they
+        // will be processed by this flush that we are scheduling.
+        scheduleFlush();
+      }
+    }
+
+    __exports__.asap = asap;
+  });
+define("promise/cast", 
+  ["exports"],
+  function(__exports__) {
+    "use strict";
+    /**
+      `RSVP.Promise.cast` returns the same promise if that promise shares a constructor
+      with the promise being casted.
+
+      Example:
+
+      ```javascript
+      var promise = RSVP.resolve(1);
+      var casted = RSVP.Promise.cast(promise);
+
+      console.log(promise === casted); // true
+      ```
+
+      In the case of a promise whose constructor does not match, it is assimilated.
+      The resulting promise will fulfill or reject based on the outcome of the
+      promise being casted.
+
+      In the case of a non-promise, a promise which will fulfill with that value is
+      returned.
+
+      Example:
+
+      ```javascript
+      var value = 1; // could be a number, boolean, string, undefined...
+      var casted = RSVP.Promise.cast(value);
+
+      console.log(value === casted); // false
+      console.log(casted instanceof RSVP.Promise) // true
+
+      casted.then(function(val) {
+        val === value // => true
+      });
+      ```
+
+      `RSVP.Promise.cast` is similar to `RSVP.resolve`, but `RSVP.Promise.cast` differs in the
+      following ways:
+      * `RSVP.Promise.cast` serves as a memory-efficient way of getting a promise, when you
+      have something that could either be a promise or a value. RSVP.resolve
+      will have the same effect but will create a new promise wrapper if the
+      argument is a promise.
+      * `RSVP.Promise.cast` is a way of casting incoming thenables or promise subclasses to
+      promises of the exact class specified, so that the resulting object's `then` is
+      ensured to have the behavior of the constructor you are calling cast on (i.e., RSVP.Promise).
+
+      @method cast
+      @for RSVP
+      @param {Object} object to be casted
+      @return {Promise} promise that is fulfilled when all properties of `promises`
+      have been fulfilled, or rejected if any of them become rejected.
+    */
+
+
+    function cast(object) {
+      /*jshint validthis:true */
+      if (object && typeof object === 'object' && object.constructor === this) {
+        return object;
+      }
+
+      var Promise = this;
+
+      return new Promise(function(resolve) {
+        resolve(object);
+      });
+    }
+
+    __exports__.cast = cast;
+  });
+define("promise/config", 
+  ["exports"],
+  function(__exports__) {
+    "use strict";
+    var config = {
+      instrument: false
+    };
+
+    function configure(name, value) {
+      if (arguments.length === 2) {
+        config[name] = value;
+      } else {
+        return config[name];
+      }
+    }
+
+    __exports__.config = config;
+    __exports__.configure = configure;
+  });
+define("promise/polyfill", 
+  ["./promise","./utils","exports"],
+  function(__dependency1__, __dependency2__, __exports__) {
+    "use strict";
+    var RSVPPromise = __dependency1__.Promise;
+    var isFunction = __dependency2__.isFunction;
+
+    function polyfill() {
+      var es6PromiseSupport = 
+        "Promise" in window &&
+        // Some of these methods are missing from
+        // Firefox/Chrome experimental implementations
+        "cast" in window.Promise &&
+        "resolve" in window.Promise &&
+        "reject" in window.Promise &&
+        "all" in window.Promise &&
+        "race" in window.Promise &&
+        // Older version of the spec had a resolver object
+        // as the arg rather than a function
+        (function() {
+          var resolve;
+          new window.Promise(function(r) { resolve = r; });
+          return isFunction(resolve);
+        }());
+
+      if (!es6PromiseSupport) {
+        window.Promise = RSVPPromise;
+      }
+    }
+
+    __exports__.polyfill = polyfill;
+  });
+define("promise/promise", 
+  ["./config","./utils","./cast","./all","./race","./resolve","./reject","./asap","exports"],
+  function(__dependency1__, __dependency2__, __dependency3__, __dependency4__, __dependency5__, __dependency6__, __dependency7__, __dependency8__, __exports__) {
+    "use strict";
+    var config = __dependency1__.config;
+    var configure = __dependency1__.configure;
+    var objectOrFunction = __dependency2__.objectOrFunction;
+    var isFunction = __dependency2__.isFunction;
+    var now = __dependency2__.now;
+    var cast = __dependency3__.cast;
+    var all = __dependency4__.all;
+    var race = __dependency5__.race;
+    var staticResolve = __dependency6__.resolve;
+    var staticReject = __dependency7__.reject;
+    var asap = __dependency8__.asap;
+
+    var counter = 0;
+
+    config.async = asap; // default async is asap;
+
+    function Promise(resolver) {
+      if (!isFunction(resolver)) {
+        throw new TypeError('You must pass a resolver function as the first argument to the promise constructor');
+      }
+
+      if (!(this instanceof Promise)) {
+        throw new TypeError("Failed to construct 'Promise': Please use the 'new' operator, this object constructor cannot be called as a function.");
+      }
+
+      this._subscribers = [];
+
+      invokeResolver(resolver, this);
+    }
+
+    function invokeResolver(resolver, promise) {
+      function resolvePromise(value) {
+        resolve(promise, value);
+      }
+
+      function rejectPromise(reason) {
+        reject(promise, reason);
+      }
+
+      try {
+        resolver(resolvePromise, rejectPromise);
+      } catch(e) {
+        rejectPromise(e);
+      }
+    }
+
+    function invokeCallback(settled, promise, callback, detail) {
+      var hasCallback = isFunction(callback),
+          value, error, succeeded, failed;
+
+      if (hasCallback) {
+        try {
+          value = callback(detail);
+          succeeded = true;
+        } catch(e) {
+          failed = true;
+          error = e;
+        }
+      } else {
+        value = detail;
+        succeeded = true;
+      }
+
+      if (handleThenable(promise, value)) {
+        return;
+      } else if (hasCallback && succeeded) {
+        resolve(promise, value);
+      } else if (failed) {
+        reject(promise, error);
+      } else if (settled === FULFILLED) {
+        resolve(promise, value);
+      } else if (settled === REJECTED) {
+        reject(promise, value);
+      }
+    }
+
+    var PENDING   = void 0;
+    var SEALED    = 0;
+    var FULFILLED = 1;
+    var REJECTED  = 2;
+
+    function subscribe(parent, child, onFulfillment, onRejection) {
+      var subscribers = parent._subscribers;
+      var length = subscribers.length;
+
+      subscribers[length] = child;
+      subscribers[length + FULFILLED] = onFulfillment;
+      subscribers[length + REJECTED]  = onRejection;
+    }
+
+    function publish(promise, settled) {
+      var child, callback, subscribers = promise._subscribers, detail = promise._detail;
+
+      for (var i = 0; i < subscribers.length; i += 3) {
+        child = subscribers[i];
+        callback = subscribers[i + settled];
+
+        invokeCallback(settled, child, callback, detail);
+      }
+
+      promise._subscribers = null;
+    }
+
+    Promise.prototype = {
+      constructor: Promise,
+
+      _state: undefined,
+      _detail: undefined,
+      _subscribers: undefined,
+
+      then: function(onFulfillment, onRejection) {
+        var promise = this;
+
+        var thenPromise = new this.constructor(function() {});
+
+        if (this._state) {
+          var callbacks = arguments;
+          config.async(function invokePromiseCallback() {
+            invokeCallback(promise._state, thenPromise, callbacks[promise._state - 1], promise._detail);
+          });
+        } else {
+          subscribe(this, thenPromise, onFulfillment, onRejection);
+        }
+
+        return thenPromise;
+      },
+
+      'catch': function(onRejection) {
+        return this.then(null, onRejection);
+      }
+    };
+
+    Promise.all = all;
+    Promise.cast = cast;
+    Promise.race = race;
+    Promise.resolve = staticResolve;
+    Promise.reject = staticReject;
+
+    function handleThenable(promise, value) {
+      var then = null,
+      resolved;
+
+      try {
+        if (promise === value) {
+          throw new TypeError("A promises callback cannot return that same promise.");
+        }
+
+        if (objectOrFunction(value)) {
+          then = value.then;
+
+          if (isFunction(then)) {
+            then.call(value, function(val) {
+              if (resolved) { return true; }
+              resolved = true;
+
+              if (value !== val) {
+                resolve(promise, val);
+              } else {
+                fulfill(promise, val);
+              }
+            }, function(val) {
+              if (resolved) { return true; }
+              resolved = true;
+
+              reject(promise, val);
+            });
+
+            return true;
+          }
+        }
+      } catch (error) {
+        if (resolved) { return true; }
+        reject(promise, error);
+        return true;
+      }
+
+      return false;
+    }
+
+    function resolve(promise, value) {
+      if (promise === value) {
+        fulfill(promise, value);
+      } else if (!handleThenable(promise, value)) {
+        fulfill(promise, value);
+      }
+    }
+
+    function fulfill(promise, value) {
+      if (promise._state !== PENDING) { return; }
+      promise._state = SEALED;
+      promise._detail = value;
+
+      config.async(publishFulfillment, promise);
+    }
+
+    function reject(promise, reason) {
+      if (promise._state !== PENDING) { return; }
+      promise._state = SEALED;
+      promise._detail = reason;
+
+      config.async(publishRejection, promise);
+    }
+
+    function publishFulfillment(promise) {
+      publish(promise, promise._state = FULFILLED);
+    }
+
+    function publishRejection(promise) {
+      publish(promise, promise._state = REJECTED);
+    }
+
+    __exports__.Promise = Promise;
+  });
+define("promise/race", 
+  ["./utils","exports"],
+  function(__dependency1__, __exports__) {
+    "use strict";
+    /* global toString */
+    var isArray = __dependency1__.isArray;
+
+    /**
+      `RSVP.race` allows you to watch a series of promises and act as soon as the
+      first promise given to the `promises` argument fulfills or rejects.
+
+      Example:
+
+      ```javascript
+      var promise1 = new RSVP.Promise(function(resolve, reject){
+        setTimeout(function(){
+          resolve("promise 1");
+        }, 200);
+      });
+
+      var promise2 = new RSVP.Promise(function(resolve, reject){
+        setTimeout(function(){
+          resolve("promise 2");
+        }, 100);
+      });
+
+      RSVP.race([promise1, promise2]).then(function(result){
+        // result === "promise 2" because it was resolved before promise1
+        // was resolved.
+      });
+      ```
+
+      `RSVP.race` is deterministic in that only the state of the first completed
+      promise matters. For example, even if other promises given to the `promises`
+      array argument are resolved, but the first completed promise has become
+      rejected before the other promises became fulfilled, the returned promise
+      will become rejected:
+
+      ```javascript
+      var promise1 = new RSVP.Promise(function(resolve, reject){
+        setTimeout(function(){
+          resolve("promise 1");
+        }, 200);
+      });
+
+      var promise2 = new RSVP.Promise(function(resolve, reject){
+        setTimeout(function(){
+          reject(new Error("promise 2"));
+        }, 100);
+      });
+
+      RSVP.race([promise1, promise2]).then(function(result){
+        // Code here never runs because there are rejected promises!
+      }, function(reason){
+        // reason.message === "promise2" because promise 2 became rejected before
+        // promise 1 became fulfilled
+      });
+      ```
+
+      @method race
+      @for RSVP
+      @param {Array} promises array of promises to observe
+      @param {String} label optional string for describing the promise returned.
+      Useful for tooling.
+      @return {Promise} a promise that becomes fulfilled with the value the first
+      completed promises is resolved with if the first completed promise was
+      fulfilled, or rejected with the reason that the first completed promise
+      was rejected with.
+    */
+    function race(promises) {
+      /*jshint validthis:true */
+      var Promise = this;
+
+      if (!isArray(promises)) {
+        throw new TypeError('You must pass an array to race.');
+      }
+      return new Promise(function(resolve, reject) {
+        var results = [], promise;
+
+        for (var i = 0; i < promises.length; i++) {
+          promise = promises[i];
+
+          if (promise && typeof promise.then === 'function') {
+            promise.then(resolve, reject);
+          } else {
+            resolve(promise);
+          }
+        }
+      });
+    }
+
+    __exports__.race = race;
+  });
+define("promise/reject", 
+  ["exports"],
+  function(__exports__) {
+    "use strict";
+    /**
+      `RSVP.reject` returns a promise that will become rejected with the passed
+      `reason`. `RSVP.reject` is essentially shorthand for the following:
+
+      ```javascript
+      var promise = new RSVP.Promise(function(resolve, reject){
+        reject(new Error('WHOOPS'));
+      });
+
+      promise.then(function(value){
+        // Code here doesn't run because the promise is rejected!
+      }, function(reason){
+        // reason.message === 'WHOOPS'
+      });
+      ```
+
+      Instead of writing the above, your code now simply becomes the following:
+
+      ```javascript
+      var promise = RSVP.reject(new Error('WHOOPS'));
+
+      promise.then(function(value){
+        // Code here doesn't run because the promise is rejected!
+      }, function(reason){
+        // reason.message === 'WHOOPS'
+      });
+      ```
+
+      @method reject
+      @for RSVP
+      @param {Any} reason value that the returned promise will be rejected with.
+      @param {String} label optional string for identifying the returned promise.
+      Useful for tooling.
+      @return {Promise} a promise that will become rejected with the given
+      `reason`.
+    */
+    function reject(reason) {
+      /*jshint validthis:true */
+      var Promise = this;
+
+      return new Promise(function (resolve, reject) {
+        reject(reason);
+      });
+    }
+
+    __exports__.reject = reject;
+  });
+define("promise/resolve", 
+  ["exports"],
+  function(__exports__) {
+    "use strict";
+    /**
+      `RSVP.resolve` returns a promise that will become fulfilled with the passed
+      `value`. `RSVP.resolve` is essentially shorthand for the following:
+
+      ```javascript
+      var promise = new RSVP.Promise(function(resolve, reject){
+        resolve(1);
+      });
+
+      promise.then(function(value){
+        // value === 1
+      });
+      ```
+
+      Instead of writing the above, your code now simply becomes the following:
+
+      ```javascript
+      var promise = RSVP.resolve(1);
+
+      promise.then(function(value){
+        // value === 1
+      });
+      ```
+
+      @method resolve
+      @for RSVP
+      @param {Any} value value that the returned promise will be resolved with
+      @param {String} label optional string for identifying the returned promise.
+      Useful for tooling.
+      @return {Promise} a promise that will become fulfilled with the given
+      `value`
+    */
+    function resolve(value) {
+      /*jshint validthis:true */
+      var Promise = this;
+      return new Promise(function(resolve, reject) {
+        resolve(value);
+      });
+    }
+
+    __exports__.resolve = resolve;
+  });
+define("promise/utils", 
+  ["exports"],
+  function(__exports__) {
+    "use strict";
+    function objectOrFunction(x) {
+      return isFunction(x) || (typeof x === "object" && x !== null);
+    }
+
+    function isFunction(x) {
+      return typeof x === "function";
+    }
+
+    function isArray(x) {
+      return Object.prototype.toString.call(x) === "[object Array]";
+    }
+
+    // Date.now is not available in browsers < IE9
+    // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/now#Compatibility
+    var now = Date.now || function() { return new Date().getTime(); };
+
+
+    __exports__.objectOrFunction = objectOrFunction;
+    __exports__.isFunction = isFunction;
+    __exports__.isArray = isArray;
+    __exports__.now = now;
+  });
+requireModule('promise/polyfill').polyfill();
+}());
+/**
+    The AeroGear.ajax is used to perform Ajax requests.
+    @status Experimental
+    @param {Object} [settings={}] - the settings to configure the request
+    @param {String} [settings.url] - the url to send the request to
+    @param {String} [settings.type="GET"] - the type of the request
+    @param {String} [settings.dataType="json"] - the data type of the recipient's response
+    @param {String} [settings.accept="application/json"] - the media types which are acceptable for the recipient's response
+    @param {String} [settings.contentType="application/json"] - the media type of the entity-body sent to the recipient
+    @param {Object} [settings.headers] - the HTTP request headers
+    @param {AeroGear~successCallback} [options.success] - callback to be executed if the AJAX request results in success
+    @param {AeroGear~errorCallback} [options.error] - callback to be executed if the AJAX request results in error
+    @param {Object} [settings.params] - contains query parameters to be added in URL in case of GET request or in request body in case of POST and application/x-www-form-urlencoded content type
+    @param {Object} [settings.data] - the data to be sent to the recipient
+    @returns {Object} An ES6 Promise
+    @example
+
+        var es6promise = AeroGear.ajax({
+            type: "GET",
+            params: {
+                param1: "val1"
+            },
+            url: "http://SERVER:PORT/CONTEXT"
+        });
+*/
+AeroGear.ajax = function( settings ) {
+    return new Promise( function( resolve, reject ) {
+        settings = settings || {};
+
+        var request = new XMLHttpRequest(),
+            that = this,
+            requestType = ( settings.type || "GET" ).toUpperCase(),
+            responseType = ( settings.dataType || "json" ).toLowerCase(),
+            accept = ( settings.accept || "application/json" ).toLowerCase(),
+            // TODO: compare contentType by checking if it starts with some value since it might contains the charset as well
+            contentType = ( settings.contentType || "application/json" ).toLowerCase(),
+            _oncomplete,
+            header,
+            name,
+            urlEncodedData = [],
+            url = settings.url,
+            data = settings.data;
+
+        if ( settings.params ) {
+            // encode params
+            if( requestType === "GET" || ( requestType === "POST" && contentType === "application/x-www-form-urlencoded" ) ) {
+                for( name in settings.params ) {
+                    urlEncodedData.push( encodeURIComponent( name ) + "=" + encodeURIComponent( settings.params[ name ] || "" ) );
+                }
+            // add params in request body
+            } else if ( contentType === "application/json" ) {
+                data = data || {};
+                data.params = data.params || {};
+                AeroGear.extend( data.params,  settings.params );
+            }
+        }
+
+        if ( contentType === "application/x-www-form-urlencoded" ) {
+            if ( data ) {
+                for( name in data ) {
+                    urlEncodedData.push( encodeURIComponent( name ) + '=' + encodeURIComponent( data[ name ] ) );
+                }
+            }
+            data = urlEncodedData.join( "&" );
+        }
+
+        // if is GET request & URL params exist then add them in URL
+        if( requestType === "GET" && urlEncodedData.length > 0 ) {
+            url += "?" + urlEncodedData.join( "&" );
+        }
+
+        request.open( requestType, url, true, settings.username, settings.password );
+
+        request.responseType = responseType;
+        request.setRequestHeader( "Content-Type", contentType );
+        request.setRequestHeader( "Accept", accept );
+
+        if( settings.headers ) {
+            for ( header in settings.headers ) {
+                request.setRequestHeader( header, settings.headers[ header ] );
+            }
+        }
+
+        // Success and 400's
+        request.onload = function() {
+            var status = ( request.status < 400 ) ? "success" : "error",
+                callbackArgs = that._createCallbackArgs( request, status ),
+                promiseValue = that._createPromiseValue.apply( this, callbackArgs );
+
+            if( status === "success" ) {
+                resolve( promiseValue );
+            } else {
+                reject( promiseValue );
+            }
+
+            that._oncomplete( request, status, callbackArgs );
+        };
+
+        // Network errors
+        request.onerror = function() {
+            var status = "error",
+                callbackArgs = that._createCallbackArgs( request, status );
+
+            reject( that._createPromiseValue.apply( this, callbackArgs ) );
+            that._oncomplete( request, status, callbackArgs );
+        };
+
+        // create callback arguments
+        this._createCallbackArgs = function( request, status ) {
+            var statusText = request.statusText || status,
+                dataOrError = ( responseType === 'text' || responseType === '') ? request.responseText : request.response;
+
+            return [ dataOrError, statusText, request ];
+        };
+
+        // create promise value
+        this._createPromiseValue = function( dataOrError, statusText, request ) {
+            return {
+                data: dataOrError,
+                statusText: statusText,
+                agXHR: request
+            };
+        };
+
+        this._oncomplete = function( request, status, callbackArgs ) {
+            if( settings[ status ] ) {
+                settings[ status ].apply( this, callbackArgs || that._createCallbackArgs( request, status ) );
+            }
+
+            if( settings.complete ) {
+                settings.complete.call( this, "complete", request );
+            }
+        };
+
+        request.send( data );
+    });
+};
+
 /**
     The AeroGear.Pipeline provides a persistence API that is protocol agnostic and does not depend on any certain data model. Through the use of adapters, this library provides common methods like read, save and delete that will just work.
     @status Stable
@@ -573,7 +1476,6 @@ sjcl.ecc.ecdsa.publicKey.prototype={verify:function(a,b,c){sjcl.bitArray.bitLeng
     @param {String|Array|Object} [config] - A configuration for the pipe(s) being created along with the Pipeline. If an object or array containing objects is used, the objects can have the following properties:
     @param {String} config.name - the name that the pipe will later be referenced by
     @param {String} [config.type="Rest"] - the type of pipe as determined by the adapter used
-    @param {String} [config.recordId="id"] - @deprecated the identifier used to denote the unique id for each record in the data associated with this pipe
     @param {Object} [config.authenticator=null] - the AeroGear.auth object used to pass credentials to a secure endpoint
     @param {Object} [settings.authorizer=null] - the AeroGear.authz object used to pass credentials to a secure endpoint
     @param {Object} [config.settings={}] - the settings to be passed to the adapter. For specific settings, see the documentation for the adapter you are using.
@@ -588,7 +1490,7 @@ var pl2 = AeroGear.Pipeline( "tasks" );
 // Create multiple pipes using the default adapter
 var pl3 = AeroGear.Pipeline( [ "tasks", "projects" ] );
 
-//Create a new REST pipe with a custom ID using an object
+// Create a new REST pipe with a custom ID using an object
 var pl4 = AeroGear.Pipeline({
     name: "customPipe",
     type: "rest",
@@ -597,7 +1499,7 @@ var pl4 = AeroGear.Pipeline({
     }
 });
 
-//Create multiple REST pipes using objects
+// Create multiple REST pipes using objects
 var pl5 = AeroGear.Pipeline([
     {
         name: "customPipe",
@@ -657,7 +1559,6 @@ AeroGear.Pipeline.adapters = {};
     @constructs AeroGear.Pipeline.adapters.Rest
     @param {String} pipeName - the name used to reference this particular pipe
     @param {Object} [settings={}] - the settings to be passed to the adapter
-    @param {Object} [settings.authenticator=null] - @deprecated the AeroGear.auth object used to pass credentials to a secure endpoint
     @param {String} [settings.baseURL] - defines the base URL to use for an endpoint
     @param {String} [settings.contentType="application/json"] - the default type of content being sent to the server
     @param {String} [settings.dataType="json"] - the default type of data expected to be returned from the server
@@ -672,17 +1573,17 @@ AeroGear.Pipeline.adapters = {};
     @param {Object} [settings.xhrFields] - specify extra xhr options, like the withCredentials flag
     @returns {Object} The created pipe
     @example
-    //Create an empty pipeline
+    // Create an empty pipeline
     var pipeline = AeroGear.Pipeline();
 
-    //Add a new Pipe with a custom baseURL, custom endpoint and default paging turned on
+    // Add a new Pipe with a custom baseURL, custom endpoint and default paging turned on
     pipeline.add( "customPipe", {
         baseURL: "http://customURL.com",
         endpoint: "customendpoint",
         pageConfig: true
     });
 
-    //Add a new Pipe with a custom paging options
+    // Add a new Pipe with a custom paging options
     pipeline.add( "customPipe", {
         pageConfig: {
             metadataLocation: "header",
@@ -710,7 +1611,6 @@ AeroGear.Pipeline.adapters.Rest = function( pipeName, settings ) {
             xhrFields: settings.xhrFields
         },
         recordId = settings.recordId || "id",
-        authenticator = settings.authenticator || null,
         authorizer = settings.authorizer || null,
         type = "Rest",
         pageConfig = settings.pageConfig,
@@ -725,16 +1625,6 @@ AeroGear.Pipeline.adapters.Rest = function( pipeName, settings ) {
      */
     this.getAjaxSettings = function() {
         return ajaxSettings;
-    };
-
-    /**
-        Returns the value of the private authenticator var
-        @private
-        @augments Rest
-        @returns {AeroGear.Authenticator}
-     */
-    this.getAuthenticator = function() {
-        return authenticator;
     };
 
     /**
@@ -911,7 +1801,7 @@ var filteredData = myPipe.read({
 });
 
     @example
-//JSONP - Default JSONP call to a JSONP server
+// JSONP - Default JSONP call to a JSONP server
 myPipe.read({
     jsonp: true,
     success: function( data ){
@@ -919,7 +1809,7 @@ myPipe.read({
     }
 });
 
-//JSONP - JSONP call with a changed callback parameter
+// JSONP - JSONP call with a changed callback parameter
 myPipe.read({
     jsonp: {
         callback: "jsonp"
@@ -930,7 +1820,7 @@ myPipe.read({
 });
 
     @example
-//Paging - using the default weblinking protocal
+// Paging - using the default weblinking protocal
 var defaultPagingPipe = AeroGear.Pipeline([{
     name: "webLinking",
     settings: {
@@ -939,9 +1829,9 @@ var defaultPagingPipe = AeroGear.Pipeline([{
     }
 }]).pipes[0];
 
-//Get a limit of 2 pieces of data from the server, starting from the first page
-//Calling the "next" function will get the next 2 pieces of data, if available.
-//Similarily, calling the "previous" function will get the previous 2 pieces of data, if available
+// Get a limit of 2 pieces of data from the server, starting from the first page
+// Calling the "next" function will get the next 2 pieces of data, if available.
+// Similarily, calling the "previous" function will get the previous 2 pieces of data, if available
 defaultPagingPipe.read({
     offsetValue: 1,
     limitValue: 2,
@@ -957,7 +1847,7 @@ defaultPagingPipe.read({
     }
 });
 
-//Create a new Pipe with a custom paging options
+// Create a new Pipe with a custom paging options
 var customPagingPipe = AeroGear.Pipeline([{
     name: "customPipe",
     settings: {
@@ -969,7 +1859,7 @@ var customPagingPipe = AeroGear.Pipeline([{
     }
 }]).pipes[0];
 
-//Even with custom options, you use "next" and "previous" the same way
+// Even with custom options, you use "next" and "previous" the same way
 customPagingPipe.read({
     offsetValue: 1,
     limitValue: 2,
@@ -1171,7 +2061,7 @@ AeroGear.Pipeline.adapters.Rest.prototype.save = function( data, options ) {
             formData.append( key, data[ key ] );
 
             if( data[ key ] instanceof File || data[ key ] instanceof Blob ) {
-                //Options to tell jQuery not to process data or worry about content-type.
+                // Options to tell jQuery not to process data or worry about content-type.
                 extraOptions.contentType = false;
                 extraOptions.processData = false;
             }
@@ -1319,14 +2209,14 @@ var dm2 = AeroGear.DataManager( "tasks" );
 // Create multiple stores using the default adapter
 var dm3 = AeroGear.DataManager( [ "tasks", "projects" ] );
 
-//Create a custom store
+// Create a custom store
 var dm3 = AeroGear.DataManager({
     name: "mySessionStorage",
     type: "SessionLocal",
     id: "customID"
 });
 
-//Create multiple custom stores
+// Create multiple custom stores
 var dm4 = AeroGear.DataManager([
     {
         name: "mySessionStorage",
@@ -1359,7 +2249,7 @@ AeroGear.DataManager = function( config ) {
 
         var i, type, fallback, preferred, settings;
 
-        config = AeroGear.isArray( config ) ? config : [ config ];
+        config = Array.isArray( config ) ? config : [ config ];
 
         config = config.map( function( value, index, array ) {
             settings = value.settings || {};
@@ -1371,7 +2261,7 @@ AeroGear.DataManager = function( config ) {
                     if( !( type in AeroGear.DataManager.validAdapters ) ) {
                         for( i = 0; i < preferred.length; i++ ) {
                             if( preferred[ i ] in AeroGear.DataManager.validAdapters ) {
-                                //For Deprecation purposes in 1.3.0  will be removed in 1.4.0
+                                // For Deprecation purposes in 1.3.0  will be removed in 1.4.0
                                 if( type === "IndexedDB" || type === "WebSQL" ) {
                                     value.settings = AeroGear.extend( value.settings || {}, { async: true } );
                                 }
@@ -1388,11 +2278,11 @@ AeroGear.DataManager = function( config ) {
         AeroGear.Core.call( this );
         this.add( config );
 
-        //Put back DataManager.add
+        // Put back DataManager.add
         this.add = this._add;
     };
 
-    //Save a reference to DataManager.add to put back later
+    // Save a reference to DataManager.add to put back later
     this._add = this.add;
 
     /**
@@ -1406,11 +2296,11 @@ AeroGear.DataManager = function( config ) {
         AeroGear.Core.call( this );
         this.remove( config );
 
-        //Put back DataManager.remove
+        // Put back DataManager.remove
         this.remove = this._remove;
     };
 
-    //Save a reference to DataManager.remove to put back later
+    // Save a reference to DataManager.remove to put back later
     this._remove = this.remove;
 
     this.lib = "DataManager";
@@ -1550,7 +2440,7 @@ AeroGear.DataManager.adapters.base = function( storeName, settings ) {
         if( crypto.agcrypto ) {
             IV = JSON.parse( window.localStorage.getItem( "ag-" + storeName + "-IV" ) ) || {};
             cryptoOptions.IV = IV.id;
-            data = AeroGear.isArray( data ) ? data : [ data ];
+            data = Array.isArray( data ) ? data : [ data ];
             content = data.map( function( value ) {
                 cryptoOptions.data = value.data;
                 return JSON.parse( sjcl.codec.utf8String.fromBits( crypto.agcrypto.decrypt( cryptoOptions ) ) );
@@ -1570,16 +2460,18 @@ AeroGear.DataManager.adapters.base = function( storeName, settings ) {
     @constructs AeroGear.DataManager.adapters.Memory
     @param {String} storeName - the name used to reference this particular store
     @param {Object} [settings={}] - the settings to be passed to the adapter
-    @param {Boolean} [settings.async=false] -  If true, all operations will be simulated as asynchronous and return a promise. This is a compatibility option for the Memory and SessionLocal adapters only for 1.3.0 and will be removed in the 1.4.0 release
     @param {String} [settings.recordId="id"] - the name of the field used to uniquely identify a "record" in the data
     @returns {Object} The created store
     @example
-//Create an empty DataManager
+// Create an empty DataManager
 var dm = AeroGear.DataManager();
 
-//Add a custom memory store
-dm.add( "newStore", {
-    recordId: "customID"
+// Add a custom memory store
+dm.add({
+    name: "newStore",
+    settings: {
+        recordId: "customID"
+    }
 });
  */
 AeroGear.DataManager.adapters.Memory = function( storeName, settings ) {
@@ -1626,28 +2518,6 @@ AeroGear.DataManager.adapters.Memory = function( storeName, settings ) {
     };
 
     /**
-        A Function for a jQuery.Deferred to always call
-        @private
-        @augments Memory
-     */
-    this.always = function( value, status, callback ) {
-        if( callback ) {
-            callback.call( this, value, status );
-        }
-    };
-
-    /**
-        Returns the value of the async setting
-        @private
-        @augments Memory
-        Compatibility fix
-        Added in 1.3 to remove in 1.4
-    */
-    this.getAsync = function() {
-        return settings && settings.async ? true : false;
-    };
-
-    /**
         Returns a synchronous jQuery.Deferred for api symmetry
         @private
         @augments base
@@ -1662,7 +2532,7 @@ AeroGear.DataManager.adapters.Memory = function( storeName, settings ) {
         @augments base
     */
     this.close = function() {
-        //purposefully left empty
+        // purposefully left empty
     };
 
     /**
@@ -1707,39 +2577,35 @@ AeroGear.DataManager.adapters.Memory.isValid = function() {
     @param {Object} [options={}] - options
     @param {AeroGear~successCallbackMEMORY} [options.success] - a callback to be called after successfully reading a Memory Store -  this read is synchronous but the callback is provided for API symmetry.
     @returns {Object} A jQuery.Deferred promise
-    @returns {Array} @deprecated Returns data from the store, optionally filtered by an id
     @example
 var dm = AeroGear.DataManager( "tasks" ).stores[ 0 ];
 
 // Get an array of all data in the store
-var allData = dm.read();
+dm.read()
+    .then( function( data ) {
+        console.log( data );
+    });
 
-//Read a specific piece of data based on an id
-var justOne = dm.read( 12345 );
+// Read a specific piece of data based on an id
+dm.read( 12345 )
+    .then( function( data ) {
+        console.log( data );
+    });
  */
 AeroGear.DataManager.adapters.Memory.prototype.read = function( id, options ) {
     var filter = {},
         data,
-        deferred = jQuery.Deferred(),
-        async = this.getAsync(); //added in 1.3.0,  will be removed in 1.4.0;
+        deferred = jQuery.Deferred();
 
     filter[ this.getRecordId() ] = id;
     if( id ) {
-        if( async ) {
-            this.filter( filter ).then( function( filtered ) { data = filtered; } );
-        } else {
-            data = this.filter( filter );
-        }
+        this.filter( filter ).then( function( filtered ) { data = filtered; } );
     } else {
         data = this.getData();
     }
-    //data = id ? this.filter( filter ).then( function( data ) {  } ) : this.getData();
-    if( async ) {
-        deferred.always( this.always );
-        return deferred.resolve( data, "success", options ? options.success : undefined );
-    } else {
-        return data;
-    }
+
+    deferred.always( this.always );
+    return deferred.resolve( data, "success", options ? options.success : undefined );
 };
 
 /**
@@ -1749,7 +2615,6 @@ AeroGear.DataManager.adapters.Memory.prototype.read = function( id, options ) {
     @param {Boolean} [options.reset] - If true, this will empty the current data and set it to the data being saved
     @param {AeroGear~successCallbackMEMORY} [options.success] - a callback to be called after successfully saving data from a Memory Store -  this save is synchronous but the callback is provided for API symmetry.
     @returns {Object} A jQuery.Deferred promise
-    @returns {Array} @deprecated Returns the updated data from the store
     @example
 var dm = AeroGear.DataManager( "tasks" ).stores[ 0 ];
 
@@ -1760,7 +2625,7 @@ dm.save({
     ...
 });
 
-//Store an array of new Tasks
+// Store an array of new Tasks
 dm.save([
     {
         title: "Task2",
@@ -1780,10 +2645,9 @@ dm.save( toUpdate );
  */
 AeroGear.DataManager.adapters.Memory.prototype.save = function( data, options ) {
     var itemFound = false,
-        deferred = jQuery.Deferred(),
-        async = this.getAsync(); //added in 1.3.0,  will be removed in 1.4.0
+        deferred = jQuery.Deferred();
 
-    data = AeroGear.isArray( data ) ? data : [ data ];
+    data = Array.isArray( data ) ? data : [ data ];
 
     if ( options && options.reset ) {
         this.setData( data );
@@ -1807,12 +2671,8 @@ AeroGear.DataManager.adapters.Memory.prototype.save = function( data, options ) 
             this.setData( data );
         }
     }
-    if( async ) {
-        deferred.always( this.always );
-        return deferred.resolve( this.getData(), "success", options ? options.success : undefined );
-    } else {
-        return this.getData();
-    }
+    deferred.always( this.always );
+    return deferred.resolve( this.getData(), "success", options ? options.success : undefined );
 };
 
 /**
@@ -1821,7 +2681,6 @@ AeroGear.DataManager.adapters.Memory.prototype.save = function( data, options ) 
     @param {Object} [options={}] - options
     @param {AeroGear~successCallbackMEMORY} [options.success] - a callback to be called after successfully removing data from a  Memory Store -  this remove is synchronous but the callback is provided for API symmetry.
     @returns {Object} A jQuery.Deferred promise
-    @returns {Array} @deprecated Returns the updated data from the store
     @example
 var dm = AeroGear.DataManager( "tasks" ).stores[ 0 ];
 
@@ -1840,30 +2699,33 @@ dm.save({
     title: "And Another Created Task"
 });
 
-// Remove a particular item from the store by its id
-var toRemove = dm.read()[ 0 ];
-dm.remove( toRemove.id );
+// Delete a record
+dm.remove( 1, {
+    success: function( data ) { ... },
+    error: function( error ) { ... }
+});
 
-// Remove an item from the store using the data object
-toRemove = dm.read()[ 0 ];
-dm.remove( toRemove );
+// Remove all data
+dm.remove( undefined, {
+    success: function( data ) { ... },
+    error: function( error ) { ... }
+});
 
 // Delete all remaining data from the store
 dm.remove();
  */
 AeroGear.DataManager.adapters.Memory.prototype.remove = function( toRemove, options ) {
     var delId, data, item,
-        deferred = jQuery.Deferred(),
-        async = this.getAsync(); //added in 1.3.0,  will be removed in 1.4.0
+        deferred = jQuery.Deferred();
 
     deferred.always( this.always );
 
     if ( !toRemove ) {
         // empty data array and return
         this.emptyData();
-        return async ? deferred.resolve( this.getData(), "success", options ? options.success : undefined ) : this.getData();
+        return deferred.resolve( this.getData(), "success", options ? options.success : undefined );
     } else {
-        toRemove = AeroGear.isArray( toRemove ) ? toRemove : [ toRemove ];
+        toRemove = Array.isArray( toRemove ) ? toRemove : [ toRemove ];
     }
 
     for ( var i = 0; i < toRemove.length; i++ ) {
@@ -1884,47 +2746,54 @@ AeroGear.DataManager.adapters.Memory.prototype.remove = function( toRemove, opti
         }
     }
 
-    return async ? deferred.resolve( this.getData(), "success", options ? options.success : undefined ) : this.getData();
+    return deferred.resolve( this.getData(), "success", options ? options.success : undefined );
 };
 
 /**
     Filter the current store's data
-    @param {Object} [filterParameters] - An object containing key value pairs on which to filter the store's data. To filter a single parameter on multiple values, the value can be an object containing a data key with an Array of values to filter on and its own matchAny key that will override the global matchAny for that specific filter parameter.
+    @param {Object} [filterParameters] - An object containing key/value pairs on which to filter the store's data. To filter a single parameter on multiple values, the value can be an object containing a data key with an Array of values to filter on and its own matchAny key that will override the global matchAny for that specific filter parameter.
     @param {Boolean} [matchAny] - When true, an item is included in the output if any of the filter parameters is matched.
     @param {Object} [options={}] - options
     @param {AeroGear~successCallbackMEMORY} [options.success] - a callback to be called after successfully filter data from a Memory Store -  this filter is synchronous but the callback is provided for API symmetry.
     @return {Object} A jQuery.Deferred promise
-    @returns {Array} @deprecated Returns a filtered array of data objects based on the contents of the store's data object and the filter parameters. This method only returns a copy of the data and leaves the original data object intact.
     @example
 var dm = AeroGear.DataManager( "tasks" ).stores[ 0 ];
 
 // An object can be passed to filter the data
 // This would return all records with a user named 'admin' **AND** a date of '2012-08-01'
-var filteredData = dm.filter({
-    date: "2012-08-01",
-    user: "admin"
-});
+dm.stores.tasks.filter({
+        date: "2012-08-01",
+        user: "admin"
+    },
+    {
+        success: function( data ) { ... },
+        error: function( error ) { ... }
+    }
+);
 
 // The matchAny parameter changes the search to an OR operation
 // This would return all records with a user named 'admin' **OR** a date of '2012-08-01'
-var filteredData = dm.filter({
-    date: "2012-08-01",
-    user: "admin"
-}, true);
+dm.stores.tasks.filter({
+        date: "2012-08-01",
+        user: "admin"
+    },
+    true,
+    {
+        success: function( data ) { ... },
+        error: function( error ) { ... }
+    }
+);
  */
 AeroGear.DataManager.adapters.Memory.prototype.filter = function( filterParameters, matchAny, options ) {
     var filtered, key, j, k, l, nestedKey, nestedFilter, nestedValue,
         that = this,
-        deferred = jQuery.Deferred(),
-        async = this.getAsync(); //Added in 1.3.0  Will Be Removed in 1.4.0
+        deferred = jQuery.Deferred();
 
     deferred.always( this.always );
 
     if ( !filterParameters ) {
         filtered = this.getData() || [];
-        //Added in 1.3.0  Will Be Removed in 1.4.0
-        return async ? deferred.resolve( filtered, "success", options ? options.success : undefined ) : filtered;
-        //return deferred.resolve( filtered, "success", options ? options.success : undefined );
+        return deferred.resolve( filtered, "success", options ? options.success : undefined );
     }
 
     filtered = this.getData().filter( function( value, index, array) {
@@ -1939,7 +2808,7 @@ AeroGear.DataManager.adapters.Memory.prototype.filter = function( filterParamete
                 paramResult = filterObj.matchAny ? false : true;
 
                 for ( j = 0; j < filterObj.data.length; j++ ) {
-                    if( AeroGear.isArray( value[ keys[ key ] ] ) ) {
+                    if( Array.isArray( value[ keys[ key ] ] ) ) {
                         if( value[ keys [ key ] ].length ) {
                             if( jQuery( value[ keys ] ).not( filterObj.data ).length === 0 && jQuery( filterObj.data ).not( value[ keys ] ).length === 0 ) {
                                 paramResult = true;
@@ -1999,18 +2868,18 @@ AeroGear.DataManager.adapters.Memory.prototype.filter = function( filterParamete
                 }
             } else {
                 // Filter on parameter value
-                if( AeroGear.isArray( value[ keys[ key ] ] ) ) {
+                if( Array.isArray( value[ keys[ key ] ] ) ) {
                     paramResult = matchAny ? false: true;
 
                     if( value[ keys[ key ] ].length ) {
                         for(j = 0; j < value[ keys[ key ] ].length; j++ ) {
                             if( matchAny && filterParameters[ keys[ key ] ] === value[ keys[ key ] ][ j ]  ) {
-                                //at least one must match and this one does so return true
+                                // at least one must match and this one does so return true
                                 paramResult = true;
                                 break;
                             }
                             if( !matchAny && filterParameters[ keys[ key ] ] !== value[ keys[ key ] ][ j ] ) {
-                                //All must match but this one doesn't so return false
+                                // All must match but this one doesn't so return false
                                 paramResult = false;
                                 break;
                             }
@@ -2041,9 +2910,7 @@ AeroGear.DataManager.adapters.Memory.prototype.filter = function( filterParamete
 
         return match;
     });
-    //Added in 1.3.0  Will Be Removed in 1.4.0
-    return async ? deferred.resolve( filtered, "success", options ? options.success : undefined ) : filtered;
-    //return deferred.resolve( filtered, "success", options ? options.success : undefined );
+    return deferred.resolve( filtered, "success", options ? options.success : undefined );
 };
 
 /**
@@ -2059,7 +2926,6 @@ AeroGear.DataManager.validateAdapter( "Memory", AeroGear.DataManager.adapters.Me
     @mixes AeroGear.DataManager.adapters.Memory
     @param {String} storeName - the name used to reference this particular store
     @param {Object} [settings={}] - the settings to be passed to the adapter
-    @param {Boolean} [settings.async=false] -  If true, all operations will be simulated as asynchronous and return a promise. This is a compatibility option for the Memory and SessionLocal adapters only for 1.3.0 and will be removed in the 1.4.0 release
     @param {String} [settings.recordId="id"] - the name of the field used to uniquely identify a "record" in the data
     @param {String} [settings.storageType="sessionStorage"] - the type of store can either be sessionStorage or localStorage
     @param {Object} [settings.crypto] - the crypto settings to be passed to the adapter
@@ -2067,13 +2933,17 @@ AeroGear.DataManager.validateAdapter( "Memory", AeroGear.DataManager.adapters.Me
     @param {Object} [settings.crypto.options] - the specific options for the AeroGear.Crypto encrypt/decrypt methods
     @returns {Object} The created store
     @example
-//Create an empty DataManager
+// Create an empty DataManager
 var dm = AeroGear.DataManager();
 
-//Add a custom SessionLocal store using local storage as its storage type
-dm.add( "newStore", {
-    recordId: "customID",
-    storageType: "localStorage"
+// Add a custom SessionLocal store using local storage as its storage type
+dm.add({
+    name: "newStore",
+    type: "SessionLocal"
+    settings: {
+        recordId: "customID",
+        storageType: "localStorage"
+    }
 });
  */
 AeroGear.DataManager.adapters.SessionLocal = function( storeName, settings ) {
@@ -2123,7 +2993,11 @@ AeroGear.DataManager.adapters.SessionLocal = function( storeName, settings ) {
     Determine if this adapter is supported in the current environment
 */
 AeroGear.DataManager.adapters.SessionLocal.isValid = function() {
-    return !!(window.localStorage && window.sessionStorage);
+    try {
+        return !!(window.localStorage && window.sessionStorage);
+    } catch( error ){
+        return false;
+    }
 };
 
 // Inherit from the Memory adapter
@@ -2139,7 +3013,6 @@ AeroGear.DataManager.adapters.SessionLocal.prototype = Object.create( new AeroGe
         @param {AeroGear~errorCallbackStorage} [options.error] - A callback to be executed when an error is thrown trying to save data to the store. The most likely error is when the localStorage is full. The callback is passed the error object and the data that was attempted to be saved as arguments.
         @param {AeroGear~success} [options.success] - A callback to be called if the save was successful. This probably isn't necessary since the save is synchronous but is provided for API symmetry.
         @returns {Object} A jQuery.Deferred promise
-        @returns {Array} @deprecated Returns the updated data from the store
         @example
 var dm = AeroGear.DataManager([{ name: "tasks", type: "SessionLocal" }]).stores[ 0 ];
 
@@ -2150,7 +3023,7 @@ dm.save({
     ...
 });
 
-//Store an array of new Tasks
+// Store an array of new Tasks
 dm.save([
     {
         title: "Task2",
@@ -2174,16 +3047,11 @@ dm.save( toUpdate );
             var newData,
                 deferred = jQuery.Deferred(),
                 reset = options && options.reset ? options.reset : false,
-                oldData = window[ this.getStoreType() ].getItem( this.getStoreKey() ),
-                async = this.getAsync(); //added in 1.3.0,  will be removed in 1.4.0
+                oldData = window[ this.getStoreType() ].getItem( this.getStoreKey() );
 
-            if( async ) {
-                AeroGear.DataManager.adapters.Memory.prototype.save.apply( this, [ arguments[ 0 ], { reset: reset, async: async } ] ).then( function( data ) {
-                    newData = data;
-                });
-            } else {
-                newData = AeroGear.DataManager.adapters.Memory.prototype.save.apply( this, [ arguments[ 0 ], { reset: reset } ] );
-            }
+            AeroGear.DataManager.adapters.Memory.prototype.save.apply( this, [ arguments[ 0 ], { reset: reset } ] ).then( function( data ) {
+                newData = data;
+            });
 
             deferred.always( this.always );
 
@@ -2196,25 +3064,19 @@ dm.save( toUpdate );
             } catch( error ) {
                 oldData = oldData ? JSON.parse( oldData ) : [];
 
-                if( async ) {
-                    AeroGear.DataManager.adapters.Memory.prototype.save.apply( this, [ oldData, { reset: reset, async: async } ] ).then( function( data ) {
-                        newData = data;
-                    });
-                } else {
-                    newData = AeroGear.DataManager.adapters.Memory.prototype.save.apply( this, [ oldData, { reset: reset } ] );
-                }
+                AeroGear.DataManager.adapters.Memory.prototype.save.apply( this, [ oldData, { reset: reset } ] ).then( function( data ) {
+                    newData = data;
+                });
 
                 if ( options && options.error ) {
-                    return async ? deferred.reject( data, "error", options ? options.error : undefined ) : options.error( error, data );
+                    return deferred.reject( data, "error", options ? options.error : undefined );
                 } else {
-                    if( async ) {
-                        deferred.reject();
-                    }
+                    deferred.reject();
                     throw error;
                 }
             }
 
-            return async ? deferred.resolve( newData, "success", options ? options.success : undefined ) : newData;
+            return deferred.resolve( newData, "success", options ? options.success : undefined );
         }, enumerable: true, configurable: true, writable: true
     },
     /**
@@ -2225,7 +3087,6 @@ dm.save( toUpdate );
         @param {Object} [options] - The options to be passed to the save method
         @param {AeroGear~successrCallbackStorage} [options.success] - A callback to be called if the remove was successful. This probably isn't necessary since the remove is synchronous but is provided for API symmetry.
         @returns {Object} A jQuery.Deferred promise
-        @returns {Array} @deprecated Returns the updated data from the store
         @example
 var dm = AeroGear.DataManager([{ name: "tasks", type: "SessionLocal" }]).stores[ 0 ];
 
@@ -2244,13 +3105,17 @@ dm.save({
     title: "And Another Created Task"
 });
 
-// Remove a particular item from the store by its id
-var toRemove = dm.read()[ 0 ];
-dm.remove( toRemove.id );
+// Delete a record
+dm.remove( 1, {
+    success: function( data ) { ... },
+    error: function( error ) { ... }
+});
 
-// Remove an item from the store using the data object
-toRemove = dm.read()[ 0 ];
-dm.remove( toRemove );
+// Remove all data
+dm.remove( undefined, {
+    success: function( data ) { ... },
+    error: function( error ) { ... }
+});
 
 // Delete all remaining data from the store
 dm.remove();
@@ -2259,26 +3124,17 @@ dm.remove();
         value: function( toRemove, options ) {
             // Call the super method
             var newData,
-                deferred = jQuery.Deferred(),
-                async = this.getAsync();  //added in 1.3.0,  will be removed in 1.4.0;
+                deferred = jQuery.Deferred();
 
-            if( async ) {
-                AeroGear.DataManager.adapters.Memory.prototype.remove.apply( this, [ arguments[ 0 ], { async: true } ] ).then( function( data ) {
-                    newData = data;
-                });
-            } else {
-                newData = AeroGear.DataManager.adapters.Memory.prototype.remove.apply( this, arguments );
-            }
+            AeroGear.DataManager.adapters.Memory.prototype.remove.apply( this, arguments ).then( function( data ) {
+                newData = data;
+            });
 
             // Sync changes to persistent store
             window[ this.getStoreType() ].setItem( this.getStoreKey(), JSON.stringify( this.encrypt( newData ) ) );
 
-            if( async ) {
-                deferred.always( this.always );
-                return deferred.resolve( newData, status, options ? options.success : undefined );
-            } else {
-                return newData;
-            }
+            deferred.always( this.always );
+            return deferred.resolve( newData, status, options ? options.success : undefined );
         }, enumerable: true, configurable: true, writable: true
     }
 });
@@ -2302,13 +3158,13 @@ AeroGear.DataManager.validateAdapter( "SessionLocal", AeroGear.DataManager.adapt
     @param {Object} [settings.crypto.options] - the specific options for the AeroGear.Crypto encrypt/decrypt methods
     @returns {Object} The created store
     @example
-    //Create an empty DataManager
+    // Create an empty DataManager
     var dm = AeroGear.DataManager();
 
-    //Add an IndexedDB store
+    // Add an IndexedDB store
     dm.add({
         name: "newStore",
-        storageType: "IndexedDB"
+        type: "IndexedDB"
     });
 
  */
@@ -2374,7 +3230,7 @@ AeroGear.DataManager.adapters.IndexedDB = function( storeName, settings ) {
     /**
         This function will check if the database is open.
         If 'auto' is not true, an error is thrown.
-        If 'auto' is true, attempt to open the databse then
+        If 'auto' is true, attempt to open the database then
         run the function passed in
         @private
         @augments IndexedDB
@@ -2384,7 +3240,7 @@ AeroGear.DataManager.adapters.IndexedDB = function( storeName, settings ) {
 
         if( !database ) {
             if( !auto ) {
-                //hasn't been opened yet
+                // hasn't been opened yet
                 throw "Database not opened";
             } else {
                 this.open().always( function( value, status ) {
@@ -2416,13 +3272,13 @@ AeroGear.DataManager.adapters.IndexedDB.isValid = function() {
     @param {AeroGear~errorCallbackINDEXEDDB} [settings.error] - a callback to be called when there is an error with the opening of an IndexedDB
     @return {Object} A jQuery.Deferred promise
     @example
-    //Create an empty DataManager
+    // Create an empty DataManager
     var dm = AeroGear.DataManager();
 
-    //Add an IndexedDB store
+    // Add an IndexedDB store
     dm.add({
         name: "newStore",
-        storageType: "IndexedDB"
+        type: "IndexedDB"
     });
 
     dm.stores.newStore.open({
@@ -2439,7 +3295,7 @@ AeroGear.DataManager.adapters.IndexedDB.prototype.open = function( options ) {
         recordId = this.getRecordId(),
         deferred = jQuery.Deferred();
 
-    //Attempt to open the indexedDB database
+    // Attempt to open the indexedDB database
     request = window.indexedDB.open( storeName );
 
     request.onsuccess = function( event ) {
@@ -2471,13 +3327,13 @@ AeroGear.DataManager.adapters.IndexedDB.prototype.open = function( options ) {
     @param {AeroGear~errorCallbackINDEXEDDB} [options.error] - a callback to be called when there is an error reading an IndexedDB
     @return {Object} A jQuery.Deferred promise
     @example
-    //Create an empty DataManager
+    // Create an empty DataManager
     var dm = AeroGear.DataManager();
 
-    //Add an IndexedDB store
+    // Add an IndexedDB store
     dm.add({
         name: "newStore",
-        storageType: "IndexedDB"
+        type: "IndexedDB"
     });
 
     dm.stores.newStore.open({
@@ -2490,7 +3346,7 @@ AeroGear.DataManager.adapters.IndexedDB.prototype.open = function( options ) {
         error: function( error ) { ... }
     });
 
-    //read a record with a particular id
+    // read a record with a particular id
     dm.stores.test1.read( 5, {
         success: function( data ) { ... },
         error: function( error ) { ... }
@@ -2558,13 +3414,13 @@ AeroGear.DataManager.adapters.IndexedDB.prototype.read = function( id, options )
     @param {AeroGear~errorCallbackINDEXEDDB} [options.error] - a callback to be called when there is an error with the saving of a record into an IndexedDB
     @return {Object} A jQuery.Deferred promise
     @example
-    //Create an empty DataManager
+    // Create an empty DataManager
     var dm = AeroGear.DataManager();
 
-    //Add an IndexedDB store
+    // Add an IndexedDB store
     dm.add({
         name: "newStore",
-        storageType: "IndexedDB"
+        type: "IndexedDB"
     });
 
     dm.stores.newStore.open({
@@ -2577,7 +3433,7 @@ AeroGear.DataManager.adapters.IndexedDB.prototype.read = function( id, options )
         error: function( error ) { ... }
     });
 
-    //Save multiple Records
+    // Save multiple Records
     dm.stores.newStore.save(
         [
             { "id": 3, "name": "Grace", "type": "Little Person" },
@@ -2607,7 +3463,7 @@ AeroGear.DataManager.adapters.IndexedDB.prototype.save = function( data, options
             objectStore.clear();
         }
 
-        if( AeroGear.isArray( data ) ) {
+        if( Array.isArray( data ) ) {
             for( i; i < data.length; i++ ) {
                 objectStore.put( this.encrypt( data[ i ] ) );
             }
@@ -2644,13 +3500,13 @@ AeroGear.DataManager.adapters.IndexedDB.prototype.save = function( data, options
     @param {AeroGear~errorCallbackINDEXEDDB} [options.error] - a callback to be called when there is an error removing a record out of an IndexedDB
     @return {Object} A jQuery.Deferred promise
     @example
-    //Create an empty DataManager
+    // Create an empty DataManager
     var dm = AeroGear.DataManager();
 
-    //Add an IndexedDB store
+    // Add an IndexedDB store
     dm.add({
         name: "newStore",
-        storageType: "IndexedDB"
+        type: "IndexedDB"
     });
 
     dm.stores.newStore.open({
@@ -2664,7 +3520,7 @@ AeroGear.DataManager.adapters.IndexedDB.prototype.save = function( data, options
         error: function( error ) { ... }
     });
 
-    //Remove all data
+    // Remove all data
     dm.stores.newStore.remove( undefined, {
         success: function( data ) { ... },
         error: function( error ) { ... }
@@ -2687,7 +3543,7 @@ AeroGear.DataManager.adapters.IndexedDB.prototype.remove = function( toRemove, o
         if( !toRemove ) {
             objectStore.clear();
         } else  {
-            toRemove = AeroGear.isArray( toRemove ) ? toRemove: [ toRemove ];
+            toRemove = Array.isArray( toRemove ) ? toRemove: [ toRemove ];
 
             for( i; i < toRemove.length; i++ ) {
                 if ( typeof toRemove[ i ] === "string" || typeof toRemove[ i ] === "number" ) {
@@ -2724,19 +3580,19 @@ AeroGear.DataManager.adapters.IndexedDB.prototype.remove = function( toRemove, o
 
 /**
     Filter the current store's data
-    @param {Object} [filterParameters] - An object containing key value pairs on which to filter the store's data. To filter a single parameter on multiple values, the value can be an object containing a data key with an Array of values to filter on and its own matchAny key that will override the global matchAny for that specific filter parameter.
+    @param {Object} [filterParameters] - An object containing key/value pairs on which to filter the store's data. To filter a single parameter on multiple values, the value can be an object containing a data key with an Array of values to filter on and its own matchAny key that will override the global matchAny for that specific filter parameter.
     @param {Boolean} [matchAny] - When true, an item is included in the output if any of the filter parameters is matched.
     @param {AeroGear~successCallbackINDEXEDDB} [options.success] - a callback to be called after successful filtering of an IndexedDB
-    @param {AeroGear~errorCallbackINDEXEDDB} [options.error] - a callback to be calledd after an error filtering of an IndexedDB
+    @param {AeroGear~errorCallbackINDEXEDDB} [options.error] - a callback to be called after an error filtering of an IndexedDB
     @return {Object} A jQuery.Deferred promise
     @example
-    //Create an empty DataManager
+    // Create an empty DataManager
     var dm = AeroGear.DataManager();
 
-    //Add an IndexedDB store
+    // Add an IndexedDB store
     dm.add({
         name: "newStore",
-        storageType: "IndexedDB"
+        type: "IndexedDB"
     });
 
     dm.stores.newStore.open({
@@ -2780,13 +3636,13 @@ AeroGear.DataManager.adapters.IndexedDB.prototype.filter = function( filterParam
 /**
     Close the current store
     @example
-    //Create an empty DataManager
+    // Create an empty DataManager
     var dm = AeroGear.DataManager();
 
-    //Add an IndexedDB store and then delete a record
+    // Add an IndexedDB store and then delete a record
     dm.add({
         name: "newStore",
-        storageType: "IndexedDB"
+        type: "IndexedDB"
     });
 
     dm.stores.newStore.close();
@@ -2817,13 +3673,13 @@ AeroGear.DataManager.validateAdapter( "IndexedDB", AeroGear.DataManager.adapters
     @param {Object} [settings.crypto.options] - the specific options for the AeroGear.Crypto encrypt/decrypt methods
     @returns {Object} The created store
     @example
-    //Create an empty DataManager
+    // Create an empty DataManager
     var dm = AeroGear.DataManager();
 
-    //Add an WebSQL store
+    // Add an WebSQL store
     dm.add({
         name: "newStore",
-        storageType: "WebSQL"
+        type: "WebSQL"
     });
 
  */
@@ -2899,7 +3755,7 @@ AeroGear.DataManager.adapters.WebSQL = function( storeName, settings ) {
 
         if( !database ) {
             if( !auto ) {
-                //hasn't been opened yet
+                // hasn't been opened yet
                 throw "Database not opened";
             } else {
                 this.open().always( function( value, status ) {
@@ -2931,13 +3787,13 @@ AeroGear.DataManager.adapters.WebSQL.isValid = function() {
     @param {AeroGear~errorCallbackWEBSQL} [settings.error] - a callback to be called when there is an error opening a WebSQL DB
     @return {Object} A jQuery.Deferred promise
     @example
-    //Create an empty DataManager
+    // Create an empty DataManager
     var dm = AeroGear.DataManager();
 
-    //Add an WebSQL store
+    // Add an WebSQL store
     dm.add({
         name: "newStore",
-        storageType: "WebSQL"
+        type: "WebSQL"
     });
 
     dm.stores.newStore.open({
@@ -2956,7 +3812,7 @@ AeroGear.DataManager.adapters.WebSQL.prototype.open = function( options ) {
         storeName = this.getStoreName(),
         deferred = jQuery.Deferred();
 
-    //Do some creation and such
+    // Do some creation and such
     database = window.openDatabase( storeName, version, "AeroGear WebSQL Store", databaseSize );
 
     error = function( transaction, error ) {
@@ -2969,7 +3825,7 @@ AeroGear.DataManager.adapters.WebSQL.prototype.open = function( options ) {
     };
 
     database.transaction( function( transaction ) {
-        transaction.executeSql( "CREATE TABLE IF NOT EXISTS " + storeName + " ( " + recordId + " REAL UNIQUE, json)", [], success, error );
+        transaction.executeSql( "CREATE TABLE IF NOT EXISTS '" + storeName + "' ( " + recordId + " REAL UNIQUE, json)", [], success, error );
     });
 
     deferred.always( this.always );
@@ -2984,13 +3840,13 @@ AeroGear.DataManager.adapters.WebSQL.prototype.open = function( options ) {
     @param {AeroGear~errorCallbackWEBSQL} [options.error] - a callback to be called when there is an error reading a WebSQL DB
     @return {Object} A jQuery.Deferred promise
     @example
-    //Create an empty DataManager
+    // Create an empty DataManager
     var dm = AeroGear.DataManager();
 
-    //Add an WebSQL store
+    // Add an WebSQL store
     dm.add({
         name: "newStore",
-        storageType: "WebSQL"
+        type: "WebSQL"
     });
 
     dm.stores.newStore.open({
@@ -3003,7 +3859,7 @@ AeroGear.DataManager.adapters.WebSQL.prototype.open = function( options ) {
         error: function( error ) { ... }
     });
 
-    //read a record with a particular id
+    // read a record with a particular id
     dm.stores.test1.read( 5, {
         success: function( data ) { ... },
         error: function( error ) { ... }
@@ -3016,6 +3872,7 @@ AeroGear.DataManager.adapters.WebSQL.prototype.read = function( id, options ) {
     var success, error, sql, _read,
         that = this,
         data = [],
+        params = [],
         storeName = this.getStoreName(),
         database = this.getDatabase(),
         deferred = jQuery.Deferred(),
@@ -3034,14 +3891,15 @@ AeroGear.DataManager.adapters.WebSQL.prototype.read = function( id, options ) {
             deferred.resolve( that.decrypt( data ), "success", options.success );
         };
 
-        sql = "SELECT * FROM " + storeName;
+        sql = "SELECT * FROM '" + storeName + "'";
 
         if( id ) {
-            sql += " WHERE ID = '" + id + "'";
+            sql += " WHERE ID = ?";
+            params = [ id ];
         }
 
         database.transaction( function( transaction ) {
-            transaction.executeSql( sql, [], success, error );
+            transaction.executeSql( sql, params, success, error );
         });
     };
 
@@ -3060,13 +3918,13 @@ AeroGear.DataManager.adapters.WebSQL.prototype.read = function( id, options ) {
     @param {AeroGear~errorCallbackWEBSQL} [options.error] - a callback to be called when there is an error saving records to a WebSQL DB
     @return {Object} A jQuery.Deferred promise
     @example
-    //Create an empty DataManager
+    // Create an empty DataManager
     var dm = AeroGear.DataManager();
 
-    //Add an WebSQL store
+    // Add an WebSQL store
     dm.add({
         name: "newStore",
-        storageType: "WebSQL"
+        type: "WebSQL"
     });
 
     dm.stores.newStore.open({
@@ -3079,7 +3937,7 @@ AeroGear.DataManager.adapters.WebSQL.prototype.read = function( id, options ) {
         error: function( error ) { ... }
     });
 
-    //Save multiple Records
+    // Save multiple Records
     dm.stores.newStore.save(
         [
             { "id": 3, "name": "Grace", "type": "Little Person" },
@@ -3104,11 +3962,11 @@ AeroGear.DataManager.adapters.WebSQL.prototype.save = function( data, options ) 
 
     _save = function( database ) {
         error = function( transaction, error ) {
-        deferred.reject( error, "error", options.error );
-    };
+            deferred.reject( error, "error", options.error );
+        };
 
-    success = function( transaction, result ) {
-        that.read().done( function( result, status ) {
+        success = function( transaction, result ) {
+            that.read().done( function( result, status ) {
                 if( status === "success" ) {
                     deferred.resolve( result, status, options.success );
                 } else {
@@ -3117,16 +3975,16 @@ AeroGear.DataManager.adapters.WebSQL.prototype.save = function( data, options ) 
             });
         };
 
-        data = AeroGear.isArray( data ) ? data : [ data ];
+        data = Array.isArray( data ) ? data : [ data ];
 
         database.transaction( function( transaction ) {
             if( options.reset ) {
                 transaction.executeSql( "DROP TABLE " + storeName );
-                transaction.executeSql( "CREATE TABLE IF NOT EXISTS " + storeName + " ( " + recordId + " REAL UNIQUE, json)" );
+                transaction.executeSql( "CREATE TABLE IF NOT EXISTS '" + storeName + "' ( " + recordId + " REAL UNIQUE, json)" );
             }
             data.forEach( function( value ) {
                 value = that.encrypt( value );
-                transaction.executeSql( "INSERT OR REPLACE INTO " + storeName + " ( id, json ) VALUES ( ?, ? ) ", [ value[ recordId ], JSON.stringify( value ) ] );
+                transaction.executeSql( "INSERT OR REPLACE INTO '" + storeName + "' ( id, json ) VALUES ( ?, ? ) ", [ value[ recordId ], JSON.stringify( value ) ] );
             });
         }, error, success );
     };
@@ -3144,13 +4002,13 @@ AeroGear.DataManager.adapters.WebSQL.prototype.save = function( data, options ) 
     @param {AeroGear~errorCallbackWEBSQL} [options.error] - a callback to be called when there is an error removing a record from a WebSQL DB
     @return {Object} A jQuery.Deferred promise
     @example
-    //Create an empty DataManager
+    // Create an empty DataManager
     var dm = AeroGear.DataManager();
 
-    //Add an IndexedDB store
+    // Add an IndexedDB store
     dm.add({
         name: "newStore",
-        storageType: "WebSQL"
+        type: "WebSQL"
     });
 
     dm.stores.newStore.open({
@@ -3164,7 +4022,7 @@ AeroGear.DataManager.adapters.WebSQL.prototype.save = function( data, options ) 
         error: function( error ) { ... }
     });
 
-    //Remove all data
+    // Remove all data
     dm.stores.newStore.remove( undefined, {
         success: function( data ) { ... },
         error: function( error ) { ... }
@@ -3196,15 +4054,15 @@ AeroGear.DataManager.adapters.WebSQL.prototype.remove = function( toRemove, opti
             });
         };
 
-        sql = "DELETE FROM " + storeName;
+        sql = "DELETE FROM '" + storeName + "'";
 
         if( !toRemove ) {
-            //remove all
+            // remove all
             database.transaction( function( transaction ) {
                 transaction.executeSql( sql, [], success, error );
             });
         } else {
-            toRemove = AeroGear.isArray( toRemove ) ? toRemove: [ toRemove ];
+            toRemove = Array.isArray( toRemove ) ? toRemove: [ toRemove ];
             database.transaction( function( transaction ) {
                 for( i; i < toRemove.length; i++ ) {
                     if ( typeof toRemove[ i ] === "string" || typeof toRemove[ i ] === "number" ) {
@@ -3227,19 +4085,19 @@ AeroGear.DataManager.adapters.WebSQL.prototype.remove = function( toRemove, opti
 
 /**
     Filter the current store's data
-    @param {Object} [filterParameters] - An object containing key value pairs on which to filter the store's data. To filter a single parameter on multiple values, the value can be an object containing a data key with an Array of values to filter on and its own matchAny key that will override the global matchAny for that specific filter parameter.
+    @param {Object} [filterParameters] - An object containing key/value pairs on which to filter the store's data. To filter a single parameter on multiple values, the value can be an object containing a data key with an Array of values to filter on and its own matchAny key that will override the global matchAny for that specific filter parameter.
     @param {Boolean} [matchAny] - When true, an item is included in the output if any of the filter parameters is matched.
     @param {AeroGear~successCallbackWEBSQL} [options.success] - a callback to be called after a successful filtering of a WebSQL DB
     @param {AeroGear~errorCallbackWEBSQL} [options.error] - a callback to be calledd after an error filtering a WebSQL DB
     @return {Object} A jQuery.Deferred promise
     @example
-    //Create an empty DataManager
+    // Create an empty DataManager
     var dm = AeroGear.DataManager();
 
-    //Add an IndexedDB store
+    // Add an IndexedDB store
     dm.add({
         name: "newStore",
-        storageType: "WebSQL"
+        type: "WebSQL"
     });
 
     dm.stores.newStore.open({
@@ -3304,14 +4162,14 @@ var auth2 = AeroGear.Auth( "myAuth" );
 // Create multiple modules using the default adapter
 var auth3 = AeroGear.Auth( [ "someAuth", "anotherAuth" ] );
 
-//Create a single module by passing an object using the default adapter
+// Create a single module by passing an object using the default adapter
 var auth4 = AeroGear.Auth(
     {
         name: "objectAuth"
     }
 );
 
-//Create multiple modules by passing an array of objects using the default adapter
+// Create multiple modules by passing an array of objects using the default adapter
 var auth5 = AeroGear.Auth([
     {
         name: "objectAuth"
@@ -3364,28 +4222,28 @@ AeroGear.Auth.adapters = {};
     @param {Object} [settings.endpoints={}] - a set of REST endpoints that correspond to the different public methods including enroll, login and logout
     @returns {Object} The created auth module
     @example
-//Create an empty Authenticator
-var auth = AeroGear.Auth();
+        // Create an empty Authenticator
+        var auth = AeroGear.Auth();
 
-//Add a custom REST module to it
-auth.add( {
-    name: "module1",
-    settings: {
-        baseURL: "http://customURL.com"
-    }
-});
+        // Add a custom REST module to it
+        auth.add( {
+            name: "module1",
+            settings: {
+                baseURL: "http://customURL.com"
+            }
+        });
 
-//Add a custom REST module to it with custom security endpoints
-auth.add( {
-    name: "module2",
-    settings: {
-        endpoints: {
-            enroll: "register",
-            login: "go",
-            logout: "leave"
-        }
-    }
-});
+        // Add a custom REST module to it with custom security endpoints
+        auth.add( {
+            name: "module2",
+            settings: {
+                endpoints: {
+                    enroll: "register",
+                    login: "go",
+                    logout: "leave"
+                }
+            }
+        });
  */
 AeroGear.Auth.adapters.Rest = function( moduleName, settings ) {
     // Allow instantiation without using new
@@ -3468,7 +4326,7 @@ AeroGear.Auth.adapters.Rest = function( moduleName, settings ) {
      };
 };
 
-//Public Methods
+// Public Methods
 /**
     Enroll a new user in the authentication system
     @param {Object} data - User profile to enroll
@@ -3482,30 +4340,30 @@ AeroGear.Auth.adapters.Rest = function( moduleName, settings ) {
     @param {AeroGear~successCallbackREST} [options.success] - callback to be executed if the AJAX request results in success
     @returns {Object} The jqXHR created by jQuery.ajax
     @example
-var auth = AeroGear.Auth( "userAuth" ).modules.userAuth,
-    data = { userName: "user", password: "abc123", name: "John" };
+        var auth = AeroGear.Auth( "userAuth" ).modules.userAuth,
+            data = { userName: "user", password: "abc123", name: "John" };
 
-// Enroll a new user
-auth.enroll( data );
+        // Enroll a new user
+        auth.enroll( data );
 
-//Add a custom REST module to it with custom security endpoints
-var custom = AeroGear.Auth({
-    name: "customModule",
-    settings: {
-        endpoints: {
-            enroll: "register",
-            login: "go",
-            logout: "leave"
-        }
-    }
-}).modules.customModule,
-data = { userName: "user", password: "abc123", name: "John" };
+        // Add a custom REST module to it with custom security endpoints
+        var custom = AeroGear.Auth({
+            name: "customModule",
+            settings: {
+                endpoints: {
+                    enroll: "register",
+                    login: "go",
+                    logout: "leave"
+                }
+            }
+        }).modules.customModule,
+        data = { userName: "user", password: "abc123", name: "John" };
 
-custom.enroll( data, {
-    baseURL: "http://customurl/",
-    success: function( data ) { ... },
-    error: function( error ) { ... }
-});
+        custom.enroll( data, {
+            baseURL: "http://customurl/",
+            success: function( data ) { ... },
+            error: function( error ) { ... }
+        });
  */
 AeroGear.Auth.adapters.Rest.prototype.enroll = function( data, options ) {
     options = options || {};
@@ -3555,7 +4413,7 @@ AeroGear.Auth.adapters.Rest.prototype.enroll = function( data, options ) {
 
 /**
     Authenticate a user
-    @param {Object} data - A set of key value pairs representing the user's credentials
+    @param {Object} data - A set of key/value pairs representing the user's credentials
     @param {Object} [options={}] - An object containing key/value pairs representing options
     @param {String} [options.baseURL] - defines the base URL to use for an endpoint
     @param {String} [options.contentType] - set the content type for the AJAX request
@@ -3565,30 +4423,30 @@ AeroGear.Auth.adapters.Rest.prototype.enroll = function( data, options ) {
     @param {AeroGear~successCallbackREST} [options.success] - callback to be executed if the AJAX request results in success
     @returns {Object} The jqXHR created by jQuery.ajax
     @example
-var auth = AeroGear.Auth( "userAuth" ).modules.userAuth,
-    data = { userName: "user", password: "abc123" };
+        var auth = AeroGear.Auth( "userAuth" ).modules.userAuth,
+            data = { userName: "user", password: "abc123" };
 
-// Enroll a new user
-auth.login( data );
+        // Enroll a new user
+        auth.login( data );
 
-//Add a custom REST module to it with custom security endpoints
-var custom = AeroGear.Auth({
-    name: "customModule",
-    settings: {
-        endpoints: {
-            enroll: "register",
-            login: "go",
-            logout: "leave"
-        }
-    }
-}).modules.customModule,
-data = { userName: "user", password: "abc123", name: "John" };
+        // Add a custom REST module to it with custom security endpoints
+        var custom = AeroGear.Auth({
+            name: "customModule",
+            settings: {
+                endpoints: {
+                    enroll: "register",
+                    login: "go",
+                    logout: "leave"
+                }
+            }
+        }).modules.customModule,
+        data = { userName: "user", password: "abc123", name: "John" };
 
-custom.login( data, {
-    baseURL: "http://customurl/",
-    success: function( data ) { ... },
-    error: function( error ) { ... }
-});
+        custom.login( data, {
+            baseURL: "http://customurl/",
+            success: function( data ) { ... },
+            error: function( error ) { ... }
+        });
  */
 AeroGear.Auth.adapters.Rest.prototype.login = function( data, options ) {
     options = options || {};
@@ -3645,29 +4503,29 @@ AeroGear.Auth.adapters.Rest.prototype.login = function( data, options ) {
     @param {AeroGear~successCallbackREST} [options.success] - callback to be executed if the AJAX request results in success
     @returns {Object} The jqXHR created by jQuery.ajax
     @example
-var auth = AeroGear.Auth( "userAuth" ).modules.userAuth;
+        var auth = AeroGear.Auth( "userAuth" ).modules.userAuth;
 
-// Enroll a new user
-auth.logout();
+        // Enroll a new user
+        auth.logout();
 
-    //Add a custom REST module to it with custom security endpoints
-var custom = AeroGear.Auth({
-    name: "customModule",
-    settings: {
-        endpoints: {
-            enroll: "register",
-            login: "go",
-            logout: "leave"
-        }
-    }
-}).modules.customModule,
-data = { userName: "user", password: "abc123", name: "John" };
+        // Add a custom REST module to it with custom security endpoints
+        var custom = AeroGear.Auth({
+            name: "customModule",
+            settings: {
+                endpoints: {
+                    enroll: "register",
+                    login: "go",
+                    logout: "leave"
+                }
+            }
+        }).modules.customModule,
+        data = { userName: "user", password: "abc123", name: "John" };
 
-custom.logout({
-    baseURL: "http://customurl/",
-    success: function( data ) { ... },
-    error: function( error ) { ... }
-});
+        custom.logout({
+            baseURL: "http://customurl/",
+            success: function( data ) { ... },
+            error: function( error ) { ... }
+        });
  */
 AeroGear.Auth.adapters.Rest.prototype.logout = function( options ) {
     options = options || {};
@@ -3756,6 +4614,7 @@ AeroGear.Authorization.adapters = {};
 
 /**
     The OAuth2 adapter is the default type used when creating a new authorization module. It uses jQuery.ajax to communicate with the server.
+    While this library can be used "standalone", we recommend using it with Pipeline to get the most benefit
     This constructor is instantiated when the "Authorizer.add()" method is called
     @status Experimental
     @constructs AeroGear.Authorization.adapters.OAuth2
@@ -3768,7 +4627,7 @@ AeroGear.Authorization.adapters = {};
     @param {String} settings.scopes - a space separated list of "scopes" or things you want to access
     @returns {Object} The created authz module
     @example
-    //Create an empty Authenticator
+    // Create an empty Authenticator
     var authz = AeroGear.Authorization();
 
     authz.add({
@@ -3871,7 +4730,7 @@ AeroGear.Authorization.adapters.OAuth2 = function( name, settings ) {
         @augments OAuth2
      */
     this.parseQueryString = function( locationString ) {
-        //taken from https://developers.google.com/accounts/docs/OAuth2Login
+        // taken from https://developers.google.com/accounts/docs/OAuth2Login
         // First, parse the query string
         var params = {},
             queryString = locationString.substr( locationString.indexOf( "#" ) + 1 ),
@@ -3884,16 +4743,15 @@ AeroGear.Authorization.adapters.OAuth2 = function( name, settings ) {
     };
 };
 
-//Takes the querystring that is returned after the "dance" unparsed.
 /**
-    Enroll a new user in the authentication system
+    Validate the Authorization endpoints - Takes the querystring that is returned after the "dance" unparsed.
     @param {String} queryString - The returned query string to be parsed
     @param {Object} [options={}] - Options to pass to the enroll method
     @param {AeroGear~errorCallbackREST} [options.error] - callback to be executed if the AJAX request results in an error
     @param {AeroGear~successCallbackREST} [options.success] - callback to be executed if the AJAX request results in success
     @returns {Object} The jqXHR created by jQuery.ajax
     @example
-    //Create the Authorizer
+    // Create the Authorizer
     var authz = AeroGear.Authorization(),
         pipe;
 
@@ -3907,10 +4765,10 @@ AeroGear.Authorization.adapters.OAuth2 = function( name, settings ) {
         }
     });
 
-    //Create a new Pipeline with an authorizer
+    // Create a new Pipeline with an authorizer
     pipe = AeroGear.Pipeline( { authorizer: authz.services.coolThing } );
 
-    //Add a pipe
+    // Add a pipe
     pipe.add([
     {
         name: "cal",
@@ -3921,17 +4779,17 @@ AeroGear.Authorization.adapters.OAuth2 = function( name, settings ) {
     }
     ]);
 
-    //Make the call. OAuth2.read() will be called by Pipe.Read
+    // Make the call. OAuth2.read() will be called by Pipe.Read
     pipe.pipes.cal.read({
         success:function( response ) {
             ....
         },
         error: function( error ) {
-            //an error happened, so take the authURL and do the "OAuth2 Dance",
+            // an error happened, so take the authURL and do the "OAuth2 Dance",
         }
     });
 
-    //After a successful response from the "OAuth2 Dance", validate that the query string is valid, If all is well, the access_token will be stored.
+    // After a successful response from the "OAuth2 Dance", validate that the query string is valid, If all is well, the access_token will be stored.
     authz.services.coolThing.validate( responseFromAuthEndpoint, {
         success: function( response ){
             ...
@@ -3941,10 +4799,10 @@ AeroGear.Authorization.adapters.OAuth2 = function( name, settings ) {
         }
     });
 
-    //Make pipe.read calls
+    // Make pipe.read calls
     pipe.pipes.cal.read({
         success:function( response ) {
-            //Should be success calls
+            // Should be success calls
         },
         error: function( error ) {
             ....
@@ -3962,7 +4820,7 @@ AeroGear.Authorization.adapters.OAuth2.prototype.validate = function( queryStrin
         success;
 
     success = function( response ) {
-        //Perhaps we can use crypt here to be more secure
+        // Perhaps we can use crypt here to be more secure
         localStorage.setItem( that.getLocalStorageName(), JSON.stringify( { "accessToken": parsedQuery.access_token } ) );
         if( options.success ) {
             options.success.apply( this, arguments );
@@ -3980,15 +4838,15 @@ AeroGear.Authorization.adapters.OAuth2.prototype.validate = function( queryStrin
         return;
     }
 
-    //Make sure that the "state" value returned is the same one we sent
+    // Make sure that the "state" value returned is the same one we sent
     if( parsedQuery.state !== state ) {
-        //No Good
+        // No Good
         error.call( this, { error: "invalid_request", state: state, error_description: "state's do not match"  } );
         return;
     }
 
     if( this.getValidationEndpoint() ) {
-        jQuery.ajax({
+        return jQuery.ajax({
             url: this.getValidationEndpoint() + "?access_token=" + parsedQuery.access_token,
             success: function( response ) {
               // Must Check the audience field that is returned.  This should be the same as the registered clientID
@@ -4016,7 +4874,7 @@ AeroGear.Authorization.adapters.OAuth2.prototype.validate = function( queryStrin
     @param {AeroGear~successCallbackREST} [options.success] - callback to be executed if the AJAX request results in success
     @returns {Object} The jqXHR created by jQuery.ajax - IF an error is returned,  the authentication URL will be appended to the response object
     @example
-    //Create the Authorizer
+    // Create the Authorizer
     var authz = AeroGear.Authorization(),
     pipe;
 
@@ -4030,10 +4888,10 @@ AeroGear.Authorization.adapters.OAuth2.prototype.validate = function( queryStrin
     }
     });
 
-    //Create a new Pipeline with an authorizer
+    // Create a new Pipeline with an authorizer
     pipe = AeroGear.Pipeline( { authorizer: authz.services.coolThing } );
 
-    //Add a pipe
+    // Add a pipe
     pipe.add([
     {
         name: "cal",
@@ -4044,7 +4902,7 @@ AeroGear.Authorization.adapters.OAuth2.prototype.validate = function( queryStrin
     }
     ]);
 
-    //Make the call. OAuth2.read() will be called by Pipe.Read
+    // Make the call. OAuth2.read() will be called by Pipe.Read
     pipe.pipes.cal.read({
         success:function( response ) {
             ....
@@ -4170,6 +5028,141 @@ AeroGear.Notifier.DISCONNECTING = 2;
 AeroGear.Notifier.DISCONNECTED = 3;
 
 /**
+    The Base Notifier adapter that all other Notifier adapters( except SimplePush ) will extend from.
+    Not to be Instantiated directly
+*/
+
+AeroGear.Notifier.adapters.base = function( clientName, settings ) {
+    if ( this instanceof AeroGear.Notifier.adapters.base ) {
+        throw "Invalid instantiation of base class AeroGear.Notifier.adapters.base";
+    }
+
+    settings = settings || {};
+
+    var connectURL = settings.connectURL || "",
+        channels = settings.channels || [],
+        autoConnect = !!settings.autoConnect || channels.length,
+        state = AeroGear.Notifier.CONNECTING,
+        name = clientName,
+        client = null;
+
+    // Privileged methods
+    /**
+        Returns the value of the private connectURL var
+        @private
+        @augments AeroGear.Notifier.adapters.base
+     */
+    this.getConnectURL = function() {
+        return connectURL;
+    };
+
+    /**
+        Set the value of the private connectURL var
+        @private
+        @augments AeroGear.Notifier.adapters.base
+        @param {String} url - New connectURL for this client
+     */
+    this.setConnectURL = function( url ) {
+        connectURL = url;
+    };
+
+    /**
+        Returns the value of the private channels var
+        @private
+        @augments AeroGear.Notifier.adapters.base
+     */
+    this.getChannels = function() {
+        return channels;
+    };
+
+    /**
+        Adds a channel to the set
+        @param {Object} channel - The channel object to add to the set
+        @private
+        @augments AeroGear.Notifier.adapters.base
+     */
+    this.addChannel = function( channel ) {
+        channels.push( channel );
+    };
+
+    /**
+        Check if subscribed to a channel
+        @param {String} address - The address of the channel object to search for in the set
+        @private
+        @augments AeroGear.Notifier.adapters.base
+     */
+    this.getChannelIndex = function( address ) {
+        for ( var i = 0; i < channels.length; i++ ) {
+            if ( channels[ i ].address === address ) {
+                return i;
+            }
+        }
+        return -1;
+    };
+
+    /**
+        Removes a channel from the set
+        @param {Object} channel - The channel object to remove from the set
+        @private
+        @augments AeroGear.Notifier.adapters.base
+     */
+    this.removeChannel = function( channel ) {
+        var index = this.getChannelIndex( channel.address );
+        if ( index >= 0 ) {
+            channels.splice( index, 1 );
+        }
+    };
+
+    /**
+        Returns the value of the private state var
+        @private
+        @augments AeroGear.Notifier.adapters.base
+     */
+    this.getState = function() {
+        return state;
+    };
+
+    /**
+        Sets the value of the private state var
+        @private
+        @augments AeroGear.Notifier.adapters.base
+     */
+    this.setState = function( newState ) {
+        state = newState;
+    };
+
+    /**
+        Returns the value of the private client var
+        @private
+        @augments AeroGear.Notifier.adapters.base
+     */
+    this.getClient = function() {
+        return client;
+    };
+
+    /**
+        Sets the value of the private client var
+        @private
+        @augments AeroGear.Notifier.adapters.base
+     */
+    this.setClient = function( newClient ) {
+        client = newClient;
+    };
+
+    // Handle auto-connect.
+    // for stompws ONLY - If Login or Password are needed, autoConnect won't happen
+    if ( ( autoConnect || channels.length ) && ( !settings.login && !settings.password ) ) {
+        this.connect({
+            url: connectURL,
+            onConnect: settings.onConnect,
+            onDisconnect: settings.onDisconnect, // for Vertx
+            onConnectError: settings.onConnectError,
+            onMessage: settings.onMessage // for mqttws
+        });
+    }
+};
+
+/**
     This adapter allows communication with the AeroGear implementation of the SimplePush server protocol. Most of this functionality will be hidden behind the SimplePush client polyfill but is accessible if necessary.
     @status Experimental
     @constructs AeroGear.Notifier.adapters.SimplePush
@@ -4291,12 +5284,13 @@ AeroGear.Notifier.adapters.SimplePush = function( clientName, settings ) {
         @augments AeroGear.Notifier.adapters.SimplePush
      */
     this.processMessage = function( message ) {
-        var channel, updates;
+        var channel, updates, storage;
         if ( message.messageType === "register" && message.status === 200 ) {
             channel = {
                 channelID: message.channelID,
                 version: message.version,
-                state: "used"
+                state: "used",
+                pushEndpoint: message.pushEndpoint
             };
             pushStore.channels = this.updateChannel( pushStore.channels, channel );
             this.setPushStore( pushStore );
@@ -4307,7 +5301,7 @@ AeroGear.Notifier.adapters.SimplePush = function( clientName, settings ) {
             // Trigger registration success callback
             jQuery( navigator.push ).trigger( jQuery.Event( message.channelID + "-success", {
                 target: {
-                    result: channel
+                    result: channel.pushEndpoint
                 }
             }));
         } else if ( message.messageType === "register" ) {
@@ -4319,10 +5313,16 @@ AeroGear.Notifier.adapters.SimplePush = function( clientName, settings ) {
             throw "SimplePushUnregistrationError";
         } else if ( message.messageType === "notification" ) {
             updates = message.updates;
+            storage = JSON.parse( localStorage.getItem( "ag-push-store" ) );
 
             // Notifications could come in a batch so process all
             for ( var i = 0, updateLength = updates.length; i < updateLength; i++ ) {
+                // Find the pushEndpoint for this updates channelID
+                var chnl = storage.channels.filter( function( chanl ) {
+                    return chanl.channelID === updates[ i ].channelID;
+                });
 
+                updates[ i ].pushEndpoint = chnl ? chnl[ 0 ].pushEndpoint : "";
                 // Trigger the push event which apps will create their listeners to respond to when receiving messages
                 jQuery( navigator.push ).trigger( jQuery.Event( "push", {
                     message: updates[ i ]
@@ -4384,6 +5384,7 @@ AeroGear.Notifier.adapters.SimplePush = function( clientName, settings ) {
             if ( channels[ i ].channelID === channel.channelID ) {
                 channels[ i ].version = channel.version;
                 channels[ i ].state = channel.state;
+                channels[ i ].pushEndpoint = channel.pushEndpoint;
                 break;
             }
         }
@@ -4404,11 +5405,12 @@ AeroGear.Notifier.adapters.SimplePush = function( clientName, settings ) {
     };
 };
 
-//Public Methods
+// Public Methods
 /**
     Connect the client to the messaging service
     @param {Object} [options] - Options to pass to the connect method
     @param {String} [options.url] - The URL for the messaging service. This url will override and reset any connectURL specified when the client was created.
+    @param {Array} [options.protocols_whitelist] -  A list protocols that may be used by SockJS. By default all available protocols will be used, which is equivalent to supplying: "['websocket', 'xdr-streaming', 'xhr-streaming', 'iframe-eventsource', 'iframe-htmlfile', 'xdr-polling', 'xhr-polling', 'iframe-xhr-polling', 'jsonp-polling']"
     @param {Function} [options.onConnect] - callback to be executed when a connection is established and hello message has been acknowledged
     @param {Function} [options.onConnectError] - callback to be executed when connecting to a service is unsuccessful
     @param {Function} [options.onClose] - callback to be executed when a connection to the server is closed
@@ -4435,7 +5437,7 @@ AeroGear.Notifier.adapters.SimplePush.prototype.connect = function( options ) {
     options = options || {};
 
     var that = this,
-        client = this.getUseNative() ? new WebSocket( options.url || this.getConnectURL() ) : new SockJS( options.url || this.getConnectURL() );
+        client = this.getUseNative() ? new WebSocket( options.url || this.getConnectURL() ) : new SockJS( options.url || this.getConnectURL(), undefined, options );
 
     client.onopen = function() {
         // Immediately send hello message
@@ -4506,7 +5508,7 @@ AeroGear.Notifier.adapters.SimplePush.prototype.disconnect = function( onDisconn
 
 /**
     Subscribe this client to a new channel
-    @param {Object|Array} channels - a channel object or array of channel objects to which this client can subscribe. At a minimum, each channel should contain a requestObject which will eventually contain the subscription success callback and a callback, which is fired when notifications are received. Reused channels may also contain channelID and other metadata.
+    @param {Object|Array} channels - a channel object or array of channel objects to which this client can subscribe. At a minimum, each channel should contain a requestObject which will eventually contain the subscription success callback. Reused channels may also contain channelID and other metadata.
     @param {Boolean} [reset] - if true, remove all channels from the set and replace with the supplied channel(s)
     @example
     var SPNotifier = AeroGear.Notifier({
@@ -4534,7 +5536,7 @@ AeroGear.Notifier.adapters.SimplePush.prototype.subscribe = function( channels, 
         this.unsubscribe( this.getChannels() );
     }
 
-    channels = AeroGear.isArray( channels ) ? channels : [ channels ];
+    channels = Array.isArray( channels ) ? channels : [ channels ];
     pushStore.channels = pushStore.channels || [];
     channelLength = pushStore.channels.length;
 
@@ -4546,13 +5548,14 @@ AeroGear.Notifier.adapters.SimplePush.prototype.subscribe = function( channels, 
                 this.bindSubscribeSuccess( pushStore.channels[ index ].channelID, channels[ i ].requestObject );
                 channels[ i ].channelID = pushStore.channels[ index ].channelID;
                 channels[ i ].state = "used";
+                channels[ i ].pushEndpoint = pushStore.channels[ index ].pushEndpoint;
 
                 // Trigger the registration event since there will be no register message
                 setTimeout((function(channel) {
                     return function() {
                         jQuery( navigator.push ).trigger( jQuery.Event( channel.channelID + "-success", {
                             target: {
-                                result: channel
+                                result: channel.pushEndpoint
                             }
                         }));
                     };
@@ -4594,11 +5597,14 @@ AeroGear.Notifier.adapters.SimplePush.prototype.subscribe = function( channels, 
     SPNotifier.unsubscribe( channelObject );
  */
 AeroGear.Notifier.adapters.SimplePush.prototype.unsubscribe = function( channels ) {
-    var client = this.getClient();
+    var chan,
+        client = this.getClient(),
+        storage = JSON.parse( localStorage.getItem( "ag-push-store" ) );
 
-    channels = AeroGear.isArray( channels ) ? channels : [ channels ];
+    channels = Array.isArray( channels ) ? channels : [ channels ];
     for ( var i = 0; i < channels.length; i++ ) {
-        client.send( '{"messageType": "unregister", "channelID": "' + channels[ i ].channelID + '"}');
+        chan = storage.channels.filter( function( item ){ return item.pushEndpoint === channels[ i ]; });
+        client.send( '{"messageType": "unregister", "channelID": "' + chan[ 0 ].channelID + '"}');
     }
 };
 
@@ -4656,134 +5662,18 @@ AeroGear.Notifier.adapters.vertx = function( clientName, settings ) {
 
     settings = settings || {};
 
+    AeroGear.Notifier.adapters.base.apply( this, arguments );
+
     // Private Instance vars
-    var type = "vertx",
-        name = clientName,
-        channels = settings.channels || [],
-        autoConnect = !!settings.autoConnect || channels.length,
-        connectURL = settings.connectURL || "",
-        state = AeroGear.Notifier.CONNECTING,
-        bus = null;
-
-    // Privileged methods
-    /**
-        Returns the value of the private connectURL var
-        @private
-        @augments vertx
-     */
-    this.getConnectURL = function() {
-        return connectURL;
-    };
-
-    /**
-        Set the value of the private connectURL var
-        @private
-        @augments vertx
-        @param {String} url - New connectURL for this client
-     */
-    this.setConnectURL = function( url ) {
-        connectURL = url;
-    };
-
-    /**
-        Returns the value of the private channels var
-        @private
-        @augments vertx
-     */
-    this.getChannels = function() {
-        return channels;
-    };
-
-    /**
-        Adds a channel to the set
-        @param {Object} channel - The channel object to add to the set
-        @private
-        @augments vertx
-     */
-    this.addChannel = function( channel ) {
-        channels.push( channel );
-    };
-
-    /**
-        Check if subscribed to a channel
-        @param {String} address - The address of the channel object to search for in the set
-        @private
-        @augments vertx
-     */
-    this.getChannelIndex = function( address ) {
-        for ( var i = 0; i < channels.length; i++ ) {
-            if ( channels[ i ].address === address ) {
-                return i;
-            }
-        }
-        return -1;
-    };
-
-    /**
-        Removes a channel from the set
-        @param {Object} channel - The channel object to remove from the set
-        @private
-        @augments vertx
-     */
-    this.removeChannel = function( channel ) {
-        var index = this.getChannelIndex( channel.address );
-        if ( index >= 0 ) {
-            channels.splice( index, 1 );
-        }
-    };
-
-    /**
-        Returns the value of the private state var
-        @private
-        @augments vertx
-     */
-    this.getState = function() {
-        return state;
-    };
-
-    /**
-        Sets the value of the private state var
-        @private
-        @augments vertx
-     */
-    this.setState = function( newState ) {
-        state = newState;
-    };
-
-    /**
-        Returns the value of the private bus var
-        @private
-        @augments vertx
-     */
-    this.getBus = function() {
-        return bus;
-    };
-
-    /**
-        Sets the value of the private bus var
-        @private
-        @augments vertx
-     */
-    this.setBus = function( newBus ) {
-        bus = newBus;
-    };
-
-    // Handle auto-connect
-    if ( autoConnect || channels.length ) {
-        this.connect({
-            url: connectURL,
-            onConnect: settings.onConnect,
-            onDisconnect: settings.onDisconnect,
-            onConnectError: settings.onConnectError
-        });
-    }
+    var type = "vertx";
 };
 
-//Public Methods
+// Public Methods
 /**
     Connect the client to the messaging service
     @param {Object} [options={}] - Options to pass to the connect method
     @param {String} [options.url] - The URL for the messaging service. This url will override and reset any connectURL specified when the client was created.
+    @param {Array} [options.protocols_whitelist] -  A list protocols that may be used by SockJS. By default all available protocols will be used, which is equivalent to supplying: "['websocket', 'xdr-streaming', 'xhr-streaming', 'iframe-eventsource', 'iframe-htmlfile', 'xdr-polling', 'xhr-polling', 'iframe-xhr-polling', 'jsonp-polling']"
     @param {Function} [options.onConnect] - callback to be executed when a connection is established
     @param {Function} [options.onDisconnect] - callback to be executed when a connection is terminated
     @param {Function} [options.onConnectError] - callback to be executed when connecting to a service is unsuccessful
@@ -4815,7 +5705,7 @@ AeroGear.Notifier.adapters.vertx = function( clientName, settings ) {
 AeroGear.Notifier.adapters.vertx.prototype.connect = function( options ) {
     options = options || {};
     var that = this,
-        bus = new vertx.EventBus( options.url || this.getConnectURL() );
+        bus = new vertx.EventBus( options.url || this.getConnectURL(), options );
 
     bus.onopen = function() {
         // Make a Copy of the channel array instead of a reference.
@@ -4845,7 +5735,7 @@ AeroGear.Notifier.adapters.vertx.prototype.connect = function( options ) {
         }
     };
 
-    this.setBus( bus );
+    this.setClient( bus );
 };
 
 /**
@@ -4879,7 +5769,7 @@ AeroGear.Notifier.adapters.vertx.prototype.connect = function( options ) {
 
  */
 AeroGear.Notifier.adapters.vertx.prototype.disconnect = function() {
-    var bus = this.getBus();
+    var bus = this.getClient();
     if ( this.getState() === AeroGear.Notifier.CONNECTED ) {
         this.setState( AeroGear.Notifier.DISCONNECTING );
         bus.close();
@@ -4922,10 +5812,10 @@ AeroGear.Notifier.adapters.vertx.prototype.disconnect = function() {
         }
     });
 
-    //Subscribe to a channel
+    // Subscribe to a channel
     notifierVertx.clients.client1.subscribe( channelObject );
 
-    //Subscribe to multiple channels at once
+    // Subscribe to multiple channels at once
     notifierVertx.clients.client1.subscribe([
         {
             address: "newChannel",
@@ -4937,20 +5827,20 @@ AeroGear.Notifier.adapters.vertx.prototype.disconnect = function() {
         }
     ]);
 
-    //Subscribe to a channel, but first unsubscribe from all currently subscribed channels by adding the reset parameter
+    // Subscribe to a channel, but first unsubscribe from all currently subscribed channels by adding the reset parameter
     notifierVertx.clients.client1.subscribe({
             address: "newChannel",
             callback: function(){ ... }
         }, true );
  */
 AeroGear.Notifier.adapters.vertx.prototype.subscribe = function( channels, reset ) {
-    var bus = this.getBus();
+    var bus = this.getClient();
 
     if ( reset ) {
         this.unsubscribe( this.getChannels() );
     }
 
-    channels = AeroGear.isArray( channels ) ? channels : [ channels ];
+    channels = Array.isArray( channels ) ? channels : [ channels ];
     for ( var i = 0; i < channels.length; i++ ) {
         this.addChannel( channels[ i ] );
         bus.registerHandler( channels[ i ].address, channels[ i ].callback );
@@ -4959,7 +5849,7 @@ AeroGear.Notifier.adapters.vertx.prototype.subscribe = function( channels, reset
 
 /**
     Unsubscribe this client from a channel
-    @param {Object|Array} channels - a channel object or a set of channel objects to which this client nolonger wishes to subscribe
+    @param {Object|Array} channels - a channel object or a set of channel objects to which this client nolonger wishes to subscribe. Each object should have a String address and an optional callback which needs to be the same as the callback passed to the subscribe method while subscribing the client to the channel.
     @example
     // Unsubscribe from a previously subscribed channel
     notifierVertx.clients.client1.unsubscribe(
@@ -4984,12 +5874,13 @@ AeroGear.Notifier.adapters.vertx.prototype.subscribe = function( channels, reset
 
  */
 AeroGear.Notifier.adapters.vertx.prototype.unsubscribe = function( channels ) {
-    var bus = this.getBus();
+    var bus = this.getClient(),
+        thisChannels = this.getChannels();
 
-    channels = AeroGear.isArray( channels ) ? channels : [ channels ];
+    channels = Array.isArray( channels ) ? channels : [ channels ];
     for ( var i = 0; i < channels.length; i++ ) {
+        bus.unregisterHandler( channels[ i ].address, channels[ i ].callback || thisChannels[ this.getChannelIndex( channels[ i ].address ) ].callback );
         this.removeChannel( channels[ i ] );
-        bus.unregisterHandler( channels[ i ].address, channels[ i ].callback );
     }
 };
 
@@ -5014,7 +5905,7 @@ AeroGear.Notifier.adapters.vertx.prototype.unsubscribe = function( channels ) {
 
  */
 AeroGear.Notifier.adapters.vertx.prototype.send = function( channel, message, publish ) {
-    var bus = this.getBus();
+    var bus = this.getClient();
 
     if ( typeof message === Boolean && !publish ) {
         publish = message;
@@ -5076,131 +5967,13 @@ AeroGear.Notifier.adapters.stompws = function( clientName, settings ) {
 
     settings = settings || {};
 
+    AeroGear.Notifier.adapters.base.apply( this, arguments );
+
     // Private Instance vars
-    var type = "stompws",
-        name = clientName,
-        channels = settings.channels || [],
-        autoConnect = !!settings.autoConnect || channels.length,
-        connectURL = settings.connectURL || "",
-        state = AeroGear.Notifier.CONNECTING,
-        client = null;
-
-    // Privileged methods
-    /**
-        Returns the value of the private connectURL var
-        @private
-        @augments AeroGear.Notifier.adapters.stompws
-     */
-    this.getConnectURL = function() {
-        return connectURL;
-    };
-
-    /**
-        Set the value of the private connectURL var
-        @private
-        @augments AeroGear.Notifier.adapters.stompws
-        @param {String} url - New connectURL for this client
-     */
-    this.setConnectURL = function( url ) {
-        connectURL = url;
-    };
-
-    /**
-        Returns the value of the private channels var
-        @private
-        @augments AeroGear.Notifier.adapters.stompws
-     */
-    this.getChannels = function() {
-        return channels;
-    };
-
-    /**
-        Adds a channel to the set
-        @param {Object} channel - The channel object to add to the set
-        @private
-        @augments AeroGear.Notifier.adapters.stompws
-     */
-    this.addChannel = function( channel ) {
-        channels.push( channel );
-    };
-
-
-    /**
-        Check if subscribed to a channel
-        @param {String} address - The address of the channel object to search for in the set
-        @private
-        @augments AeroGear.Notifier.adapters.stompws
-     */
-    this.getChannelIndex = function( address ) {
-        for ( var i = 0; i < channels.length; i++ ) {
-            if ( channels[ i ].address === address ) {
-                return i;
-            }
-        }
-        return -1;
-    };
-
-    /**
-        Removes a channel from the set
-        @param {Object} channel - The channel object to remove from the set
-        @private
-        @augments AeroGear.Notifier.adapters.stompws
-     */
-    this.removeChannel = function( channel ) {
-        var index = this.getChannelIndex( channel.address );
-        if ( index >= 0 ) {
-            channels.splice( index, 1 );
-        }
-    };
-
-    /**
-        Returns the value of the private state var
-        @private
-        @augments AeroGear.Notifier.adapters.stompws
-     */
-    this.getState = function() {
-        return state;
-    };
-
-    /**
-        Sets the value of the private state var
-        @private
-        @augments AeroGear.Notifier.adapters.stompws
-     */
-    this.setState = function( newState ) {
-        state = newState;
-    };
-
-    /**
-        Returns the value of the private client var
-        @private
-        @augments AeroGear.Notifier.adapters.stompws
-     */
-    this.getClient = function() {
-        return client;
-    };
-
-    /**
-        Sets the value of the private client var
-        @private
-        @augments AeroGear.Notifier.adapters.stompws
-     */
-    this.setClient = function( newClient ) {
-        client = newClient;
-    };
-
-    // Handle auto-connect.
-    // If Login or Password are needed, autoConnect won't happen
-    if ( ( autoConnect || channels.length ) && ( !settings.login && !settings.password ) ) {
-        this.connect({
-            url: connectURL,
-            onConnect: settings.onConnect,
-            onConnectError: settings.onConnectError
-        });
-    }
+    var type = "stompws";
 };
 
-//Public Methods
+// Public Methods
 /**
     Connect the client to the messaging service
     @param {Object} [options={}] - Options to pass to the connect method
@@ -5345,7 +6118,7 @@ AeroGear.Notifier.adapters.stompws.prototype.disconnect = function( onDisconnect
         callback: function(){ ... }
     });
 
-    //Subscribe to multiple channels
+    // Subscribe to multiple channels
     notifier.clients.client2.subscribe([
         {
             address: "channelAddress1",
@@ -5371,7 +6144,7 @@ AeroGear.Notifier.adapters.stompws.prototype.subscribe = function( channels, res
         this.unsubscribe( this.getChannels() );
     }
 
-    channels = AeroGear.isArray( channels ) ? channels : [ channels ];
+    channels = Array.isArray( channels ) ? channels : [ channels ];
     for ( var i = 0; i < channels.length; i++ ) {
         channels[ i ].id = client.subscribe( channels[ i ].address, channels[ i ].callback );
         this.addChannel( channels[ i ] );
@@ -5412,7 +6185,7 @@ AeroGear.Notifier.adapters.stompws.prototype.debug = function( onData ) {
         callback: function(){ ... }
     });
 
-    //Unsubscribe from multiple channels
+    // Unsubscribe from multiple channels
     notifier.clients.client2.unsubscribe([
         {
             address: "channelAddress1",
@@ -5428,7 +6201,7 @@ AeroGear.Notifier.adapters.stompws.prototype.unsubscribe = function( channels ) 
     var client = this.getClient(),
         thisChannels = this.getChannels();
 
-    channels = AeroGear.isArray( channels ) ? channels : [ channels ];
+    channels = Array.isArray( channels ) ? channels : [ channels ];
     for ( var i = 0; i < channels.length; i++ ) {
         client.unsubscribe( channels[ i ].id || thisChannels[ this.getChannelIndex( channels[ i ].address ) ].id );
         this.removeChannel( channels[ i ] );
@@ -5466,29 +6239,428 @@ AeroGear.Notifier.adapters.stompws.prototype.send = function( channel, message )
     client.send( channel, headers, message );
 };
 
-(function( AeroGear, $, undefined ) {
+/**
+    The mqttws adapter uses MQTT over WebSockets for messaging.
+    @status Experimental
+    @constructs AeroGear.Notifier.adapters.mqttws
+    @param {String} clientName - The name used to reference this particular notifier client
+    @param {Object} [settings={}] - The settings to be passed to the adapter
+    @param {Boolean} [settings.autoConnect=false] - Automatically connect the client to the connectURL on creation. This option is ignored and a connection is automatically established if channels are provided as the connection is necessary prior to channel subscription
+    @param {String} [settings.connectURL=""] - Defines the URL for connecting to the messaging service
+    @param {Function} [settings.onConnect] - Callback to be executed when a connection is established if autoConnect === true
+    @param {Function} [settings.onConnectError] - Callback to be executed when connecting to a service is unsuccessful if autoConnect === true
+    @param {Function} [settings.onMessage] - Callback to be executed when a message is received
+    @param {Array} [settings.channels=[]] - A set of channel objects to which this client can subscribe. Each object should have a String address
+    @returns {Object} The created notifier client
+    @example
+    // Create an empty Notifier
+    var notifier = AeroGear.Notifier();
+
+    // Create a channel object and the channel callback function
+    var channelObject = {
+        address: "org.aerogear.messaging.global"
+    };
+
+    // Add an mqttws client with all the settings
+    notifier.add({
+        name: "client1",
+        settings: {
+            autoConnect: true,
+            connectURL: window.location.protocol + '//' + window.location.hostname + ':' + window.location.port + "/eventbus",
+            onConnect: function() {
+                console.log( "connected" );
+            },
+            onConnectError: function() {
+                console.log( "connection error" );
+            },
+            onMessage: function ( message ) {
+                console.log( message.destinationName + " " + message.payloadString );
+            },
+            channels: [ channelObject ]
+        }
+    });
+ */
+AeroGear.Notifier.adapters.mqttws = function( clientName, settings ) {
+    // Allow instantiation without using new
+    if ( !( this instanceof AeroGear.Notifier.adapters.mqttws ) ) {
+        return new AeroGear.Notifier.adapters.mqttws( clientName, settings );
+    }
+
+    settings = settings || {};
+
+    AeroGear.Notifier.adapters.base.apply( this, arguments );
+
+    // Private Instance vars
+    var type = "mqttws",
+        clientId = settings.clientId || "agClientId";
+
+    // Privileged methods
+    /**
+        Returns the value of the private clientId var
+        @private
+        @augments mqttws
+     */
+    this.getClientId = function() {
+        return clientId;
+    };
+
+    /**
+        Set the value of the private clientId var
+        @private
+        @augments mqttws
+        @param {String} id - New clientId for this client
+     */
+    this.setClientId = function( id ) {
+        clientId = id;
+    };
+
+    /**
+        Process the connect options
+        @param {Object} connectOptions - The connect options to process
+        @private
+        @augments mqttws
+     */
+    this.processConnectOptions = function( connectOptions ) {
+        if ( connectOptions.onConnect ) {
+            connectOptions.onSuccess = connectOptions.onConnect;
+            delete connectOptions.onConnect;
+        }
+
+        if ( connectOptions.onConnectError ) {
+            connectOptions.onFailure = connectOptions.onConnectError;
+            delete connectOptions.onConnectError;
+        }
+
+        if ( connectOptions.login ) {
+            connectOptions.userName = connectOptions.login;
+            delete connectOptions.login;
+        }
+
+        if ( connectOptions.url ) {
+            delete connectOptions.url;
+        }
+
+        if ( connectOptions.clientId ) {
+            delete connectOptions.clientId;
+        }
+
+        if ( connectOptions.onMessage ) {
+            delete connectOptions.onMessage;
+        }
+        return connectOptions;
+    };
+
+    /**
+        Process a URL
+        @param {String} url - The url to process
+        @private
+        @augments mqttws
+     */
+    this.processURL = function ( url ) {
+        var processedURL = {},
+            urlParts =  url.split( '/' ),
+            protocol = urlParts[ 0 ].split( ':' )[ 0 ],
+            domainParts = urlParts[ 2 ].split( ':' ),
+            // default path is /mqtt
+            path = "/" + ( urlParts[ 3 ] || "mqtt" );
+
+        processedURL.hostname = domainParts[ 0 ];
+        processedURL.port = Number( domainParts[ 1 ] ) || ( protocol === 'wss' ? 443 : 80 );
+        processedURL.path = path;
+
+        return processedURL;
+    };
+};
+
+//Public Methods
+/**
+    Connect the client to the messaging service
+    @param {Object} [options={}] - Options to pass to the connect method
+    @param {String} [options.url] - The URL for the messaging service. This url will override and reset any connectURL specified when the client was created
+    @param {Number} [options.mqttVersion] - The MQTT protocol version. Should be 3 or 4.
+    @param {Number} [options.timeout] - If the connect has not succeeded within this number of seconds, it is deemed to have failed
+    @param {String} [options.login] - Authentication login name for this connection
+    @param {String} [options.password] - Authentication password for this connection
+    @param {Number} [options.keepAliveInterval] - The server disconnects this client if there is no activity for this number of seconds
+    @param {Messaging.Message} [options.willMessage] - Sent by the server when the client disconnects abnormally
+    @param {Boolean} [options.cleanSession] - If true(default) the client and server persistent state is deleted on successful connect
+    @param {Boolean} [options.useSSL] - If present and true, use an SSL Websocket connection
+    @param {Function} [options.onConnect] - Callback to be executed when a connection is established
+    @param {Function} [options.onConnectError] - Callback to be executed when connecting to a service is unsuccessful
+    @param {Function} [settings.onMessage] - Callback to be executed when a message is received
+    @example
+    // Create an empty Notifier
+    var notifier = AeroGear.Notifier();
+
+    // Add an mqtt client
+    notifier.add({
+        name: "client1",
+        settings: {
+            connectURL: window.location.protocol + '//' + window.location.hostname + ':' + window.location.port + "/eventbus",
+            onConnect: function() {
+                console.log( "connected" );
+            },
+            onConnectError: function() {
+                console.log( "connection error" );
+            },
+            onMessage: function ( message ) {
+                console.log( message.destinationName + " " + message.payloadString );
+            }
+        }
+    });
+
+    // Connect to the vertx messaging service
+    notifier.clients.client1.connect();
+
+ */
+AeroGear.Notifier.adapters.mqttws.prototype.connect = function( options ) {
+    options = options || {};
+    var that = this,
+        onConnectCallback = options.onConnect,
+        onConnectErrorCallback = options.onConnectError,
+        client, onConnect, onConnectError, processedURL;
+
+    processedURL = this.processURL( options.url || this.getConnectURL() );
+
+    client = new Paho.MQTT.Client( processedURL.hostname, processedURL.port, processedURL.path, options.clientId || this.getClientId() );
+
+    if ( options.onMessage ) {
+        client.onMessageArrived = options.onMessage;
+    }
+
+    options.onConnect = function() {
+        // Make a Copy of the channel array instead of a reference.
+        var channels = that.getChannels().slice( 0 );
+
+        that.setState( AeroGear.Notifier.CONNECTED );
+
+        that.subscribe( channels, true );
+
+        if ( onConnectCallback ) {
+            onConnectCallback.apply( this, arguments );
+        }
+    };
+
+    options.onConnectError = function() {
+        that.setState( AeroGear.Notifier.DISCONNECTED );
+        if ( onConnectErrorCallback ) {
+            onConnectErrorCallback.apply( this, arguments );
+        }
+    };
+
+    client.connect( this.processConnectOptions( options ) );
+    this.setClient( client );
+};
+
+/**
+    Disconnect the client from the messaging service
+    @example
+    // Create an empty Notifier
+    var notifier = AeroGear.Notifier();
+
+    // Add an mqtt client
+    notifier.add({
+        name: "client1",
+        settings: {
+            connectURL: window.location.protocol + '//' + window.location.hostname + ':' + window.location.port + "/eventbus",
+            onConnect: function() {
+                console.log( "connected" );
+            },
+            onConnectError: function() {
+                console.log( "connection error" );
+            },
+            onMessage: function( message ) {
+                console.log( message.destinationName + " " + message.payloadString );
+            }
+        }
+    });
+
+    // Connect to the vertx messaging service
+    notifier.clients.client1.connect();
+
+    // Disconnect from the vertx messaging service
+    notifier.clients.client1.disconnect();
+
+ */
+AeroGear.Notifier.adapters.mqttws.prototype.disconnect = function() {
+    var client = this.getClient();
+    if ( this.getState() === AeroGear.Notifier.CONNECTED ) {
+        this.setState( AeroGear.Notifier.DISCONNECTING );
+        client.disconnect();
+    }
+};
+
+/**
+    Subscribe this client to a new channel
+    @param {Object|Array} channels - A channel object or array of channel objects to which this client can subscribe. Each object should have a String address as well as an optional subscribeOptions object which is used to control the subscription
+    @param {Boolean} [reset] - If true, remove all channels from the set and replace with the supplied channel(s)
+    @example
+    // Create an empty Notifier
+    var notifier = AeroGear.Notifier();
+
+    // Create a channel object and the channel callback function
+    var channelObject = {
+        address: "org.aerogear.messaging.global",
+        subscribeOptions: {
+            qos: 2,
+            onSuccess: function() {
+                console.log( 'Subscription was successful' );
+            },
+            onFailure: function() {
+                console.log( 'Subscription failed' );
+            },
+            timeout: 60
+        }
+    };
+
+    // Add a mqtt client with autoConnect === true and no channels
+    notifier.add({
+        name: "client1",
+        settings: {
+            autoConnect: true,
+            connectURL: window.location.protocol + '//' + window.location.hostname + ':' + window.location.port + "/eventbus",
+            onConnect: function() {
+                console.log( "connected" );
+            },
+            onConnectError: function() {
+                console.log( "connection error" );
+            },
+            onMessage: function( message ) {
+                console.log( message.destinationName + " " + message.payloadString );
+            }
+        }
+    });
+
+    // Subscribe to a channel
+    notifier.clients.client1.subscribe( channelObject );
+
+    // Subscribe to multiple channels at once
+    notifier.clients.client1.subscribe([
+        {
+            address: "newChannel",
+            subscribeOptions: {...}
+        },
+        {
+            address: "anotherChannel",
+            subscribeOptions: { ... }
+        }
+    ]);
+
+    // Subscribe to a channel, but first unsubscribe from all currently subscribed channels by adding the reset parameter
+    notifier.clients.client1.subscribe({
+            address: "newChannel",
+            subscribeOptions: { ... }
+        }, true );
+ */
+AeroGear.Notifier.adapters.mqttws.prototype.subscribe = function( channels, reset ) {
+    var client = this.getClient();
+
+    if ( reset ) {
+        this.unsubscribe( this.getChannels() );
+    }
+
+    channels = Array.isArray( channels ) ? channels : [ channels ];
+    for ( var i = 0; i < channels.length; i++ ) {
+        this.addChannel( channels[ i ] );
+        client.subscribe( channels[ i ].address, channels[ i ].subscribeOptions || {} );
+    }
+};
+
+/**
+    Unsubscribe this client from a channel
+    @param {Object|Array} channels - A channel object or a set of channel objects to which this client nolonger wishes to subscribe. Each object should have a String address and an optional unsubscribeOptions object
+    @example
+    // Unsubscribe from a previously subscribed channel
+    notifier.clients.client1.unsubscribe(
+        {
+            address: "org.aerogear.messaging.global",
+            unsubscribeOptions: {
+                onSuccess: function() {
+                    console.log( 'Unusubscribe was successful' );
+                },
+                onFailure: function() {
+                    console.log( 'Unsubscribe failed' );
+                },
+                timeout: 20
+            }
+        }
+    );
+
+    // Unsubscribe from multiple channels
+    notifier.clients.client1.unsubscribe([
+        {
+            address: "newChannel",
+            unsubscribeOptions: { ... }
+        },
+        {
+            address: "anotherChannel"
+        }
+    ]);
+ */
+AeroGear.Notifier.adapters.mqttws.prototype.unsubscribe = function( channels ) {
+    var client = this.getClient();
+
+    channels = Array.isArray( channels ) ? channels : [ channels ];
+    for ( var i = 0; i < channels.length; i++ ) {
+        client.unsubscribe( channels[ i ].address, channels[ i ].unsubscribeOptions || {} );
+        this.removeChannel( channels[ i ] );
+    }
+};
+
+/**
+    Send a message to a particular channel
+    @param {String} channel - The channel to which to send the message
+    @param {String|Object} [message=""] - The message object to send
+    @param {Object} [sendOptions] - The send options to send
+    @example
+    // Send an empty message to a channel
+    notifier.clients.client1.send( "test.address" );
+
+    // Send a "Hello" message to a channel
+    notifier.clients.client1.send( "test.address", "Hello" );
+ */
+AeroGear.Notifier.adapters.mqttws.prototype.send = function( channel, message, sendOptions ) {
+    var client = this.getClient();
+    message = new Paho.MQTT.Message( message || "" );
+    message.destinationName = channel;
+
+    if ( sendOptions ) {
+        if ( sendOptions.qos ) {
+            message.qos = sendOptions.qos;
+        }
+        if ( sendOptions.retained ) {
+            message.retained = sendOptions.retained;
+        }
+        if ( sendOptions.duplicate ) {
+            message.duplicate = sendOptions.duplicate;
+        }
+    }
+
+    client.send( message );
+};
+
+(function( AeroGear, undefined ) {
     /**
         The UnifiedPushClient object is used to perfom register and unregister operations against the AeroGear UnifiedPush server.
         @status Experimental
         @constructs AeroGear.UnifiedPushClient
         @param {String} variantID - the id representing the mobile application variant
         @param {String} variantSecret - the secret for the mobile application variant
-        @param {String} pushServerURL - the location of the UnifiedPush server
+        @param {String} pushServerURL - the location of the UnifiedPush server e.g. http(s)//host:port/context
         @returns {Object} The created unified push server client
         @example
-        //Create the UnifiedPush client object:
+        // Create the UnifiedPush client object:
         var client = AeroGear.UnifiedPushClient(
             "myVariantID",
             "myVariantSecret",
-            "http://SERVER:PORT/CONTEXT/rest/registry/device"
+            "http://SERVER:PORT/CONTEXT"
         );
 
         // assemble the metadata for the registration:
         var metadata = {
-            deviceToken: "theDeviceToken",
+            deviceToken: "http://server.com/simplePushEndpoint",
             alias: "some_username",
-            categories: [ "email" ],
-            simplePushEndpoint: "http://server.com/simplePushEndpoint"
+            categories: [ "email" ]
         };
 
         var settings = {
@@ -5514,12 +6686,12 @@ AeroGear.Notifier.adapters.stompws.prototype.send = function( channel, message )
             return new AeroGear.UnifiedPushClient( variantID, variantSecret, pushServerURL );
         }
 
+        pushServerURL = pushServerURL.substr(-1) === '/' ? pushServerURL : pushServerURL + '/';
         /**
             Performs a register request against the UnifiedPush Server using the given metadata which represents a client that wants to register with the server.
             @param {Object} settings The settings to pass in
             @param {Object} settings.metadata - the metadata for the client
-            @param {String} settings.metadata.deviceToken - identifies the client within its PushNetwork. On Android this is the registrationID, on iOS this is the deviceToken and on SimplePush this is the channelID of the subscribed channel.
-            @param {String} settings.metadata.simplePushEndpoint - the URL of the given SimplePush server/network that is needed in order to trigger a notification to be sent to the SimplePush client.
+            @param {String} settings.metadata.deviceToken - identifies the client within its PushNetwork. On Android this is the registrationID, on iOS this is the deviceToken and on SimplePush this is the URL of the given SimplePush server/network.
             @param {String} [settings.metadata.alias] - Application specific alias to identify users with the system. Common use case would be an email address or a username.
             @param {Array} [settings.metadata.categories] - In SimplePush this is the name of the registration endpoint. On Hybrid platforms like Apache Cordova this is used for tagging the registered client.
             @param {String} [settings.metadata.operatingSystem] - Useful on Hybrid platforms like Apache Cordova to specifiy the underlying operating system.
@@ -5528,7 +6700,7 @@ AeroGear.Notifier.adapters.stompws.prototype.send = function( channel, message )
             @param {AeroGear~completeCallbackREST} [settings.complete] - a callback to be called when the result of the request to the server is complete, regardless of success
             @param {AeroGear~errorCallbackREST} [settings.error] - callback to be executed if the AJAX request results in an error
             @param {AeroGear~successCallbackREST} [settings.success] - callback to be executed if the AJAX request results in success
-            @returns {Object} The jqXHR created by jQuery.ajax
+            @returns {Object} An Promise created by AeroGear.ajax
          */
         this.registerWithPushServer = function( settings ) {
             settings = settings || {};
@@ -5540,13 +6712,13 @@ AeroGear.Notifier.adapters.stompws.prototype.send = function( channel, message )
             }
 
             // Make sure that settings.metadata.categories is an Array
-            metadata.categories = AeroGear.isArray( metadata.categories ) ? metadata.categories : ( metadata.categories ? [ metadata.categories ] : [] );
+            metadata.categories = Array.isArray( metadata.categories ) ? metadata.categories : ( metadata.categories ? [ metadata.categories ] : [] );
 
-            return $.ajax({
+            return AeroGear.ajax({
                 contentType: "application/json",
                 dataType: "json",
                 type: "POST",
-                url: pushServerURL,
+                url: pushServerURL + "rest/registry/device",
                 headers: {
                     "Authorization": "Basic " + window.btoa(variantID + ":" + variantSecret)
                 },
@@ -5558,21 +6730,21 @@ AeroGear.Notifier.adapters.stompws.prototype.send = function( channel, message )
         };
 
         /**
-            Performs an unregister request against the UnifiedPush Server for the given deviceToken. The deviceToken identifies the client within its PushNetwork. On Android this is the registrationID, on iOS this is the deviceToken and on SimplePush this is the channelID of the subscribed channel.
+            Performs an unregister request against the UnifiedPush Server for the given deviceToken. The deviceToken identifies the client within its PushNetwork. On Android this is the registrationID, on iOS this is the deviceToken and on SimplePush this is the URL of the given SimplePush server/network.
             @param {String} deviceToken - unique String which identifies the client that is being unregistered.
             @param {Object} [settings = {}] The options to pass in
             @param {AeroGear~completeCallbackREST} [settings.complete] - a callback to be called when the result of the request to the server is complete, regardless of success
             @param {AeroGear~errorCallbackREST} [settings.error] - callback to be executed if the AJAX request results in an error
             @param {AeroGear~successCallbackREST} [settings.success] - callback to be executed if the AJAX request results in success
-            @returns {Object} The jqXHR created by jQuery.ajax
+            @returns {Object} An Promise created by AeroGear.ajax
          */
         this.unregisterWithPushServer = function( deviceToken, settings ) {
             settings = settings || {};
-            return $.ajax({
+            return AeroGear.ajax({
                 contentType: "application/json",
                 dataType: "json",
                 type: "DELETE",
-                url: pushServerURL + "/" + deviceToken,
+                url: pushServerURL + "rest/registry/device/" + deviceToken,
                 headers: {
                     "Authorization": "Basic " + window.btoa(variantID + ":" + variantSecret)
                 },
@@ -5583,7 +6755,7 @@ AeroGear.Notifier.adapters.stompws.prototype.send = function( channel, message )
         };
     };
 
-})( AeroGear, jQuery );
+})( AeroGear );
 
 (function( AeroGear, $, undefined ) {
     /**
@@ -5597,7 +6769,7 @@ AeroGear.Notifier.adapters.stompws.prototype.send = function( channel, message )
         @param {Function} options.onClose - a callback to fire when a connection to the SimplePush server is closed or lost.
         @returns {Object} The created unified push server client
         @example
-        //Create the SimplePushClient object:
+        // Create the SimplePushClient object:
         var client = AeroGear.SimplePushClient({
             simplePushServerURL: "https://localhost:7777/simplepush",
             onConnect: myConnectCallback,
@@ -5615,6 +6787,9 @@ AeroGear.Notifier.adapters.stompws.prototype.send = function( channel, message )
         // Check for native push support
         if ( !!navigator.push && this.options.useNative ) {
             // Browser supports push so let it handle it
+            if ( options.onConnect ) {
+                options.onConnect();
+            }
             return;
         }
 
@@ -5664,13 +6839,7 @@ AeroGear.Notifier.adapters.stompws.prototype.send = function( channel, message )
                                 }
 
                                 spClient.simpleNotifier.subscribe({
-                                    requestObject: request,
-                                    callback: function( message ) {
-                                        $( navigator.push ).trigger({
-                                            type: "push",
-                                            message: message
-                                        });
-                                    }
+                                    requestObject: request
                                 });
 
                                 return request;
@@ -5709,9 +6878,9 @@ AeroGear.Notifier.adapters.stompws.prototype.send = function( channel, message )
                     })();
 
                     /**
-                        Add the setMessageHandler function to the global navigator object
+                        Add the setMessageHandler/mozSetMessageHandler function to the global navigator object
                         @status Experimental
-                        @constructs navigator.setMessageHandler
+                        @constructs navigator.setMessageHandler/navigator.mozSetMessageHandler
                         @param {String} messageType - a name or category to give the messages being received and in this implementation, likely 'push'
                         @param {Function} callback - the function to be called when a message of this type is received
                         @example
@@ -5720,8 +6889,16 @@ AeroGear.Notifier.adapters.stompws.prototype.send = function( channel, message )
                                 console.log("Mail Message Received");
                             }
                         });
+
+                        or
+                        // Mozilla's spec currently has the 'moz' prefix
+                        navigator.mozSetMessageHandler( "push", function( message ) {
+                            if ( message.channelID === mailEndpoint.channelID ) {
+                                console.log("Mail Message Received");
+                            }
+                        });
                      */
-                    navigator.setMessageHandler = function( messageType, callback ) {
+                    navigator.setMessageHandler = navigator.mozSetMessageHandler = function( messageType, callback ) {
                         $( navigator.push ).on( messageType, function( event ) {
                             var message = event.message;
                             callback.call( this, message );
@@ -5820,7 +6997,7 @@ AeroGear.Crypto = function() {
         @status Experimental
         @return {Number} - the random value
         @example
-        //Random number generator:
+        // Random number generator:
         AeroGear.Crypto().getRandomValue();
     */
     this.getRandomValue = function() {
@@ -5836,7 +7013,7 @@ AeroGear.Crypto = function() {
         @param {Number} providedSalt - salt provided to recreate the key
         @return {bitArray} - the derived key
         @example
-        //Password encryption:
+        // Password encryption:
         AeroGear.Crypto().deriveKey( 'mypassword', 42 );
      */
     this.deriveKey = function( password, providedSalt ) {
@@ -5855,7 +7032,7 @@ AeroGear.Crypto = function() {
             plainText (data to be encrypted)
         @return {bitArray} - The encrypted data represented by an array of bytes
         @example
-        //Data encryption:
+        // Data encryption:
         var options = {
             IV: myIV,
             AAD: myAAD,
@@ -5886,7 +7063,7 @@ AeroGear.Crypto = function() {
             ciphertext (data to be decrypted)
         @return {bitArray} - The decrypted data
         @example
-        //Data decryption:
+        // Data decryption:
         var options = {
             IV: myIV,
             AAD: myAAD,
@@ -5909,7 +7086,7 @@ AeroGear.Crypto = function() {
         @param {bitArray|String} data to hash.
         @return {bitArray} - Hash value
         @example
-        //Data hashing:
+        // Data hashing:
         AeroGear.Crypto().hash( options );
      */
     this.hash = function( data ) {
@@ -5924,7 +7101,7 @@ AeroGear.Crypto = function() {
             message (message to be signed)
         @return {bitArray} - Digital signature
         @example
-        //Message sign:
+        // Message sign:
         var options = {
             keys: providedKey,
             message: PLAIN_TEXT
@@ -5946,7 +7123,7 @@ AeroGear.Crypto = function() {
             message (message to be verified), signature (Digital signature)
         @return {bitArray} - Signature
         @example
-        //Message validation
+        // Message validation
         var options = {
             keys: sjcl.ecc.ecdsa.generateKeys(192),
             signature: signatureToBeVerified
@@ -5978,7 +7155,7 @@ AeroGear.Crypto = function() {
             publicKey = pubKey;
         } else {
             keys = sjcl.ecc.elGamal.generateKeys( 192,0 );
-            //kem - key encapsulation mechanism
+            // kem - key encapsulation mechanism
             pub = keys.pub.kem();
             publicKey = pub.key;
             privateKey = keys.sec.unkem( pub.tag );
@@ -5987,4 +7164,3 @@ AeroGear.Crypto = function() {
         return this;
     };
 };
-})( this );
