@@ -15,6 +15,15 @@ module.exports = function(grunt) {
             }
         },
         qunit: {
+            iot: {
+                files: [],
+                options: {
+                    urls: [
+                        'http://localhost:<%= connect.server.options.port %>/tests/notifier/mqttws.html'
+                    ],
+                    timeout: 30000
+                }
+            },
             vertx: {
                 files: [],
                 options: {
@@ -63,4 +72,5 @@ module.exports = function(grunt) {
     grunt.registerTask('integration-vertx', ['connect', 'jshint', 'qunit:vertx']);
     grunt.registerTask('integration-activemq', ['connect', 'jshint', 'qunit:activemq']);
     grunt.registerTask('integration-simplepush', ['connect', 'jshint', 'qunit:simplepush']);
+    grunt.registerTask('integration-iot', ['connect', 'jshint', 'qunit:iot']);
 };

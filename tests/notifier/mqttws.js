@@ -6,7 +6,7 @@ var mqtt = AeroGear.Notifier({
     name: "mqtt",
     type: "mqttws",
     settings: {
-        connectURL: "ws://localhost:8081",
+        connectURL: "ws://iot.eclipse.org/ws",
         clientId: "clientId-cxz12Opwex"
     }
 }).clients.mqtt;
@@ -21,8 +21,8 @@ asyncTest( "Connect to and Disconnect from MQTT Server", function() {
             ok( true, "Successfully connected to remote MQTT service over websocket" );
             start();
         },
-        onConnectError: function() {
-            console.log( 'Connection error' );
+        onConnectError: function( err ) {
+            console.log( 'Connection error: ' + err.errorMessage );
         }
     });
 });
